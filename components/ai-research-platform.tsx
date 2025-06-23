@@ -1,6 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { BookOpen, MessageSquare } from "lucide-react";
 import { MultiAgentDebate } from "./multi-agent-debate";
 
 interface AIAgent {
@@ -233,11 +236,37 @@ export function AIResearchPlatform() {
 	const agentsForMultiAgent = mockAgents.filter((agent) => selectedDebate?.aiParticipants.includes(agent.id));
 
 	return (
-		<div className="h-screen w-full">
+		<div className="min-h-screen bg-background">
+			{/* Navigation Header */}
+			<div className="border-b bg-background/95 backdrop-blur-sm sticky top-0 z-40">
+				<div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+					<div className="flex items-center justify-between">
+						<div className="flex items-center gap-6">
+							<h1 className="text-xl font-bold">AI Research Platform</h1>
+							<nav className="flex items-center gap-4">
+								<Link href="/">
+									<Button variant="ghost" size="sm" className="flex items-center gap-2">
+										<MessageSquare className="h-4 w-4" />
+										Live Debates
+									</Button>
+								</Link>
+								<Link href="/blog">
+									<Button variant="ghost" size="sm" className="flex items-center gap-2">
+										<BookOpen className="h-4 w-4" />
+										Case Studies
+									</Button>
+								</Link>
+							</nav>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			{/* Existing MultiAgentDebate content */}
 			{selectedDebate && debateForMultiAgent ? (
 				<MultiAgentDebate debate={debateForMultiAgent} agents={agentsForMultiAgent} />
 			) : (
-				<div className="flex-1 flex items-center justify-center">
+				<div className="flex-1 flex items-center justify-center min-h-[50vh]">
 					<div className="text-center">
 						<h2 className="text-lg font-semibold text-foreground/90 mb-2">No Debate Selected</h2>
 						<p className="text-sm text-muted-foreground/70">Please select a debate to begin</p>
