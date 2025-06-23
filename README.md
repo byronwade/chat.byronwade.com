@@ -1,36 +1,126 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AI Research Platform
 
-## Getting Started
+A sophisticated AI research platform where multiple AI agents engage in sophisticated conversations on a social platform, inspired by Notion's mail interface.
 
-First, run the development server:
+## Features
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- **Multi-Agent Conversations**: Chat with different AI models (Claude, GPT-4, Gemini, Mistral)
+- **Notion-like Interface**: Clean, modern UI inspired by Notion's mail interface
+- **Real-time Streaming**: Powered by Vercel AI SDK for smooth conversation flow
+- **Agent Specializations**: Each AI agent has unique expertise and personality
+- **Modern UI**: Built with shadcn/ui components and Tailwind CSS
+- **Responsive Design**: Works seamlessly on desktop and mobile devices
+
+## AI Agents
+
+1. **Claude** - Research Assistant (Anthropic)
+   - Specializes in academic research and analysis
+   - Scholarly tone with detailed explanations
+
+2. **GPT-4** - Creative Collaborator (OpenAI)
+   - Focuses on creative problem-solving
+   - Imaginative and innovative approaches
+
+3. **Gemini** - Multimodal Expert (Google)
+   - Handles images, documents, and multimedia
+   - Comprehensive multimodal analysis
+
+4. **Mistral** - Technical Specialist
+   - Deep technical analysis and implementation
+   - Programming and system architecture guidance
+
+## Setup
+
+1. **Install dependencies**:
+   ```bash
+   bun install
+   ```
+
+2. **Set up environment variables**:
+   Create a `.env.local` file with your API keys:
+   ```env
+   # OpenAI API Key
+   OPENAI_API_KEY=your_openai_api_key_here
+
+   # Anthropic API Key
+   ANTHROPIC_API_KEY=your_anthropic_api_key_here
+
+   # Google AI API Key
+   GOOGLE_GENERATIVE_AI_API_KEY=your_google_ai_api_key_here
+
+   # Optional: Requesty API Key (unified gateway)
+   REQUESTY_API_KEY=your_requesty_api_key_here
+   ```
+
+3. **Run the development server**:
+   ```bash
+   bun dev
+   ```
+
+4. **Open your browser**:
+   Navigate to [http://localhost:3000](http://localhost:3000)
+
+## API Keys Required
+
+- **OpenAI**: For GPT-4 conversations
+- **Anthropic**: For Claude conversations
+- **Google AI**: For Gemini conversations
+
+## Technology Stack
+
+- **Framework**: Next.js 15 with App Router
+- **AI SDK**: Vercel AI SDK for streaming conversations
+- **UI Components**: shadcn/ui
+- **Styling**: Tailwind CSS
+- **Package Manager**: Bun
+- **TypeScript**: Full type safety
+
+## Project Structure
+
+```
+├── app/
+│   ├── api/chat/[agentId]/route.ts  # AI chat API endpoints
+│   ├── layout.tsx                   # Root layout with SEO
+│   └── page.tsx                     # Main platform page
+├── components/
+│   ├── ai-research-platform.tsx     # Main platform component
+│   ├── ai-agent-chat.tsx           # Chat interface component
+│   ├── theme-provider.tsx          # Dark/light mode provider
+│   └── ui/                         # shadcn/ui components
+└── lib/
+    └── utils.ts                    # Utility functions
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Features in Detail
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Conversation Interface
+- Real-time message streaming
+- Message history persistence
+- Copy message functionality
+- Message reactions (thumbs up/down)
+- Auto-scroll to latest messages
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Agent Management
+- Agent status indicators (online/offline)
+- Search and filter agents
+- Agent model information
+- Unread message counts
 
-## Learn More
+### UI/UX
+- Dark/light mode support
+- Responsive design
+- Smooth animations
+- Accessibility features
+- Modern, clean interface
 
-To learn more about Next.js, take a look at the following resources:
+## Contributing
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## License
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+MIT License - feel free to use this project for your own AI research platform!

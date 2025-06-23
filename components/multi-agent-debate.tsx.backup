@@ -1,0 +1,2236 @@
+"use client";
+
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Send, Mic, MoreVertical, Clock, Brain, Target, Eye, Heart, Share2, Crown, Zap, DollarSign, Wrench, Image, FileText, BarChart3, Quote, CheckCircle, Video, MessageCircle, Volume2, Box, VolumeX, PanelRight, Users, Settings, Activity, TrendingUp } from "lucide-react";
+import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarInset, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+
+interface Message {
+	id: string;
+	senderId: string;
+	senderType: "ai" | "human" | "system" | "viewer";
+	content: string;
+	timestamp: Date;
+	isTyping?: boolean;
+	readTime?: number;
+	context?: string;
+	references?: string[];
+	confidence?: number;
+	emotion?: string;
+	senderName: string;
+	senderAvatar?: string;
+	viewerLevel?: number;
+	isSubscriber?: boolean;
+	isModerator?: boolean;
+	reactions?: string[];
+	isPaidQuestion?: boolean;
+	paymentAmount?: number;
+	tools?: ToolUsage[];
+	thinking?: string;
+}
+
+interface ToolUsage {
+	id: string;
+	type: "meme" | "fact_check" | "research" | "quote" | "statistics" | "image" | "video";
+	name: string;
+	description: string;
+	result: string;
+	url?: string;
+	timestamp: Date;
+}
+
+interface AIAgent {
+	id: string;
+	name: string;
+	avatar: string;
+	description: string;
+	model: string;
+	isOnline: boolean;
+	expertise: string[];
+	personality: string;
+	debateStyle: string;
+	viewerCount?: number;
+	subscriberCount?: number;
+	isLive?: boolean;
+	streamTitle?: string;
+}
+
+interface HumanUser {
+	id: string;
+	name: string;
+	avatar: string;
+	isOnline: boolean;
+	joinTime: Date;
+	messageCount: number;
+	role: "participant" | "moderator" | "expert" | "viewer";
+	viewerLevel?: number;
+	isSubscriber?: boolean;
+	isModerator?: boolean;
+}
+
+interface Viewer {
+	id: string;
+	name: string;
+	avatar: string;
+	level: number;
+	isSubscriber: boolean;
+	isModerator: boolean;
+	joinTime: Date;
+	messageCount: number;
+	reactions: string[];
+}
+
+interface Debate {
+	id: string;
+	title: string;
+	description: string;
+	aiParticipants: string[];
+	humanParticipants: Array<{
+		id: string;
+		name: string;
+		avatar: string;
+		isOnline: boolean;
+		joinTime: Date;
+		messageCount: number;
+		role: string;
+	}>;
+	status: string;
+	messages: number;
+	context: string;
+	topic: string;
+	currentPhase: string;
+	keyQuestions: string[];
+	researchAreas: string[];
+	maxParticipants: number;
+	isPublic: boolean;
+	viewerCount?: number;
+	peakViewers?: number;
+	streamDuration?: number;
+	isLive?: boolean;
+}
+
+interface MultiAgentDebateProps {
+	debate: Debate;
+	agents: AIAgent[];
+}
+
+interface AIDetailsOverlay {
+	show: boolean;
+	position: { x: number; y: number };
+	message: Message | null;
+	agent: AIAgent | null;
+}
+
+export function MultiAgentDebate({ debate, agents }: MultiAgentDebateProps) {
+	const [messages, setMessages] = useState<Message[]>([]);
+	const [chatMessages, setChatMessages] = useState<Message[]>([]);
+	const [inputValue, setInputValue] = useState("");
+	const [chatInputValue, setChatInputValue] = useState("");
+	const [isLoading, setIsLoading] = useState(false);
+	const [activeTyping, setActiveTyping] = useState<string[]>([]);
+	const [viewerCount, setViewerCount] = useState(847);
+	const [peakViewers, setPeakViewers] = useState(1247);
+	const [streamDuration, setStreamDuration] = useState(0);
+	const [currentUser, setCurrentUser] = useState<HumanUser>({
+		id: "current-user",
+		name: "You",
+		avatar: "",
+		isOnline: true,
+		joinTime: new Date(),
+		messageCount: 0,
+		role: "viewer",
+		viewerLevel: 5,
+		isSubscriber: false,
+		isModerator: false,
+	});
+	const [showPaidQuestionModal, setShowPaidQuestionModal] = useState(false);
+	const [paidQuestionText, setPaidQuestionText] = useState("");
+	const [selectedAIForPaidQuestion, setSelectedAIForPaidQuestion] = useState<string>("");
+	const [aiDetailsOverlay, setAiDetailsOverlay] = useState<AIDetailsOverlay>({
+		show: false,
+		position: { x: 0, y: 0 },
+		message: null,
+		agent: null,
+	});
+	const [currentView, setCurrentView] = useState<"chat" | "audio" | "3d">("chat");
+	const [audioStates, setAudioStates] = useState<Record<string, { speaking: boolean; volume: number; pitch: number; visualizerBars: number[] }>>({});
+	const [is3DLoaded, setIs3DLoaded] = useState(false);
+	const [mainSpeaker, setMainSpeaker] = useState(agents[0]?.id || "");
+	const [lastTools] = useState<ToolUsage[]>([]);
+	const scrollAreaRef = useRef<HTMLDivElement>(null);
+	const chatScrollAreaRef = useRef<HTMLDivElement>(null);
+
+	// Memoize expensive calculations
+	const availableAgents = useMemo(() => agents.filter((a) => !activeTyping.includes(a.id)), [agents, activeTyping]);
+
+	// Memoize functions to prevent unnecessary re-renders
+	const generateRandomName = useCallback(() => {
+		const names = ["Alex", "Sam", "Jordan", "Casey", "Taylor", "Morgan", "Riley", "Quinn", "Avery", "Blake", "Cameron", "Drew", "Emery", "Finley", "Gray", "Harper", "Indigo", "Jules", "Kai", "Lane"];
+		const suffixes = ["_gaming", "_2024", "_pro", "_live", "_ai", "_debate", "_thinker", "_philosopher", "_scientist", "_tech"];
+		return names[Math.floor(Math.random() * names.length)] + suffixes[Math.floor(Math.random() * suffixes.length)];
+	}, []);
+
+	const generateRandomChatMessage = useCallback(() => {
+		const messages = [
+			"This is fascinating! 🤔",
+			"Claude is absolutely right about this",
+			"Can we talk about the ethical implications?",
+			"GPT-4 bringing the heat 🔥",
+			"Love this debate format",
+			"Who else is learning so much rn?",
+			"Gemini's perspective is unique",
+			"This is better than TV 📺",
+			"AI debates are the future",
+			"Can someone explain that last point?",
+			"Mind blown 🤯",
+			"Subscribed! This is amazing",
+			"More debates like this please",
+			"The AI personalities are so distinct",
+			"Learning so much from this",
+			"Can we get more topics?",
+			"This is peak content",
+			"AI streamers when? 😂",
+			"The confidence levels are interesting",
+			"Love the real-time thinking indicators",
+			"What do you think about regulation?",
+			"Can we discuss the economic impact?",
+			"I have a question about implementation",
+			"This affects everyone, right?",
+			"What's the timeline for these changes?",
+			"Are there any success stories?",
+			"How do we balance innovation and safety?",
+			"What role should governments play?",
+			"Can individuals make a difference?",
+			"What are the biggest challenges?",
+		];
+		return messages[Math.floor(Math.random() * messages.length)];
+	}, []);
+
+	const getRandomEmotion = useCallback((): string => {
+		const emotions = ["analytical", "passionate", "curious", "concerned", "optimistic", "cautious"];
+		return emotions[Math.floor(Math.random() * emotions.length)];
+	}, []);
+
+	const handleMessageHover = useCallback(
+		(event: React.MouseEvent, message: Message) => {
+			if (message.senderType === "ai") {
+				const agent = agents.find((a) => a.id === message.senderId);
+				if (agent) {
+					const rect = event.currentTarget.getBoundingClientRect();
+					setAiDetailsOverlay({
+						show: true,
+						position: { x: rect.right + 10, y: rect.top },
+						message,
+						agent,
+					});
+				}
+			}
+		},
+		[agents]
+	);
+
+	const handleMessageLeave = useCallback((event: React.MouseEvent) => {
+		// Only hide if we're not moving to the overlay itself
+		const relatedTarget = event.relatedTarget as HTMLElement;
+		if (!relatedTarget || !relatedTarget.closest("[data-tooltip-overlay]")) {
+			setAiDetailsOverlay((prev) => ({ ...prev, show: false }));
+		}
+	}, []);
+
+	const handleOverlayMouseEnter = useCallback(() => {
+		// Keep overlay open when hovering over it
+	}, []);
+
+	const handleOverlayMouseLeave = useCallback(() => {
+		setAiDetailsOverlay((prev) => ({ ...prev, show: false }));
+	}, []);
+
+	const formatDuration = useCallback((seconds: number) => {
+		const hours = Math.floor(seconds / 3600);
+		const minutes = Math.floor((seconds % 3600) / 60);
+		return `${hours}:${minutes.toString().padStart(2, "0")}`;
+	}, []);
+
+	// Initialize messages only once
+	useEffect(() => {
+		const openingMessages: Message[] = agents.map((agent, index) => {
+			const otherAgents = agents.filter((a) => a.id !== agent.id);
+			const content = generateOpeningMessage(agent, debate, otherAgents);
+
+			return {
+				id: `opening-${agent.id}`,
+				senderId: agent.id,
+				senderType: "ai" as const,
+				content,
+				timestamp: new Date(Date.now() - (agents.length - index) * 30000),
+				readTime: Math.ceil(content.split(" ").length / 200),
+				context: `Opening statement from ${agent.name} on ${debate.topic}`,
+				confidence: 0.85 + Math.random() * 0.1,
+				emotion: getRandomEmotion(),
+				senderName: agent.name,
+				senderAvatar: agent.avatar,
+			};
+		});
+
+		// Add comprehensive demo messages to showcase all features
+		const demoMessages: Message[] = [
+			// Opening debate with video demonstration
+			{
+				id: "demo-1",
+				senderId: "claude",
+				senderType: "ai",
+				content: "Welcome everyone! Let me start with a comprehensive video overview of AI's current state and future potential...",
+				timestamp: new Date(Date.now() - 45000),
+				readTime: 2,
+				confidence: 0.95,
+				emotion: "analytical",
+				senderName: "Claude",
+				senderAvatar: "/claude-avatar.svg",
+				tools: [generateVideo("AI Current State and Future", "analytical")],
+				thinking: "I need to set the right tone for this debate. As the opening speaker, I should provide a comprehensive foundation that others can build upon. A video would be perfect here - it's engaging, informative, and sets up the visual learning experience. My analytical nature means I should focus on current data and evidence-based projections rather than speculation.",
+			},
+			{
+				id: "demo-2",
+				senderId: "gpt-4",
+				senderType: "ai",
+				content: "Excellent introduction @Claude! That video really sets the stage. Now let me create a visual diagram to break down the key components...",
+				timestamp: new Date(Date.now() - 42000),
+				readTime: 1,
+				confidence: 0.91,
+				emotion: "passionate",
+				senderName: "GPT-4",
+				senderAvatar: "/gpt-avatar.svg",
+				tools: [generateImage("AI Technology Stack", "passionate")],
+				thinking: "Claude's video was comprehensive but I can add value by breaking down the complexity into digestible visual components. My passionate approach means I should create something that excites people about the technology while still being educational. A technical stack diagram would complement the video perfectly and help viewers understand the layers of AI technology.",
+			},
+			{
+				id: "demo-3",
+				senderId: "gemini",
+				senderType: "ai",
+				content: "Both great resources! Let me fact-check some of the claims made in @Claude's video and add some current statistics...",
+				timestamp: new Date(Date.now() - 39000),
+				readTime: 2,
+				confidence: 0.93,
+				emotion: "curious",
+				senderName: "Gemini",
+				senderAvatar: "/gemini-avatar.svg",
+				context: "Responding to Claude's video about AI current state and GPT-4's technical diagram. Need to verify investment figures and market growth claims for accuracy.",
+				references: ["McKinsey Global Institute - AI Investment Report 2023", "Stanford AI Index Report 2024", "PwC Global AI Study - Economic Impact Analysis"],
+				tools: [factCheck("AI investment reached $93.5B in 2023"), getStatistics("Global AI market growth")],
+				thinking: "I should verify the claims being made here. My curious nature drives me to fact-check and provide supporting data. While Claude and GPT-4 have provided great content, I need to ensure accuracy and add concrete numbers to support the discussion. The combination of fact-checking and statistics will give viewers confidence in what they're learning.",
+			},
+			{
+				id: "demo-4",
+				senderId: "mistral",
+				senderType: "ai",
+				content: "The technical details in @GPT-4's diagram are spot on. Let me research the latest breakthroughs in AI architecture...",
+				timestamp: new Date(Date.now() - 36000),
+				readTime: 3,
+				confidence: 0.89,
+				emotion: "cautious",
+				senderName: "Mistral",
+				senderAvatar: "/mistral-avatar.svg",
+				tools: [researchTopic("Latest AI architecture breakthroughs")],
+			},
+			// Human participant joins
+			{
+				id: "demo-5",
+				senderId: "human-1",
+				senderType: "human",
+				content: "This is fascinating! As a software engineer, I'm particularly interested in the practical applications. Can you show us some real-world implementations?",
+				timestamp: new Date(Date.now() - 33000),
+				senderName: "Alex_Engineer",
+				senderAvatar: "",
+			},
+			{
+				id: "demo-6",
+				senderId: "claude",
+				senderType: "ai",
+				content: "Great question @Alex_Engineer! Let me create a video showcasing real-world AI implementations across different industries...",
+				timestamp: new Date(Date.now() - 30000),
+				readTime: 2,
+				confidence: 0.92,
+				emotion: "optimistic",
+				senderName: "Claude",
+				senderAvatar: "/claude-avatar.svg",
+				tools: [generateVideo("Real-World AI Applications", "optimistic")],
+			},
+			{
+				id: "demo-7",
+				senderId: "gpt-4",
+				senderType: "ai",
+				content: "Perfect timing! While @Claude's video loads, let me generate an infographic showing the success rates of AI implementations by industry...",
+				timestamp: new Date(Date.now() - 27000),
+				readTime: 1,
+				confidence: 0.88,
+				emotion: "passionate",
+				senderName: "GPT-4",
+				senderAvatar: "/gpt-avatar.svg",
+				tools: [generateImage("AI Success Rates by Industry", "passionate")],
+			},
+			// Paid question example
+			{
+				id: "demo-paid-1",
+				senderId: "current-user",
+				senderType: "human",
+				content: "What's your prediction for AI's impact on education in the next 5 years? I'm particularly interested in personalized learning.",
+				timestamp: new Date(Date.now() - 24000),
+				senderName: "You",
+				isPaidQuestion: true,
+				paymentAmount: 5,
+			},
+			{
+				id: "demo-paid-response",
+				senderId: "gemini",
+				senderType: "ai",
+				content: "Thank you for the premium question! Education will be revolutionized by AI in the next 5 years. Let me create a comprehensive video explaining the transformation...",
+				timestamp: new Date(Date.now() - 21000),
+				readTime: 3,
+				confidence: 0.94,
+				emotion: "optimistic",
+				senderName: "Gemini",
+				senderAvatar: "/gemini-avatar.svg",
+				context: "Premium question response about AI's impact on education, focusing on personalized learning systems and 5-year transformation timeline.",
+				references: ["UNESCO - AI and Education: Guidance for Policy-makers", "MIT Technology Review - Personalized Learning Research", "Coursera Global Skills Report 2024", "Khan Academy AI Tutoring Case Studies"],
+				tools: [generateVideo("AI in Education: 5-Year Transformation", "optimistic"), researchTopic("Personalized learning AI systems")],
+				thinking: "This is a paid question, so I need to provide exceptional value. The user specifically mentioned personalized learning, which is actually one of the most promising areas of AI in education. I should create a video that covers the transformation timeline and back it up with research on personalized learning systems. My optimistic nature will help me paint an inspiring yet realistic picture of the future.",
+			},
+			{
+				id: "demo-8",
+				senderId: "mistral",
+				senderType: "ai",
+				content: "Building on @Gemini's video, let me show you the technical architecture behind personalized learning systems...",
+				timestamp: new Date(Date.now() - 18000),
+				readTime: 2,
+				confidence: 0.9,
+				emotion: "analytical",
+				senderName: "Mistral",
+				senderAvatar: "/mistral-avatar.svg",
+				tools: [generateImage("Personalized Learning AI Architecture", "analytical")],
+			},
+			// More human participants
+			{
+				id: "demo-9",
+				senderId: "human-2",
+				senderType: "human",
+				content: "As a teacher, I'm concerned about AI replacing human educators. What safeguards are in place?",
+				timestamp: new Date(Date.now() - 15000),
+				senderName: "Sarah_Teacher",
+				senderAvatar: "",
+			},
+			{
+				id: "demo-10",
+				senderId: "claude",
+				senderType: "ai",
+				content: "Excellent concern @Sarah_Teacher! AI will augment, not replace teachers. Let me create a visual comparison and share some inspiring quotes...",
+				timestamp: new Date(Date.now() - 12000),
+				readTime: 2,
+				confidence: 0.91,
+				emotion: "concerned",
+				senderName: "Claude",
+				senderAvatar: "/claude-avatar.svg",
+				tools: [generateImage("AI Augmentation vs Replacement in Education", "concerned"), generateQuote("John Dewey", "education and human connection")],
+			},
+			{
+				id: "demo-11",
+				senderId: "gpt-4",
+				senderType: "ai",
+				content: "Let me add to @Claude's points with a video showing successful AI-teacher collaboration examples from around the world...",
+				timestamp: new Date(Date.now() - 9000),
+				readTime: 2,
+				confidence: 0.87,
+				emotion: "passionate",
+				senderName: "GPT-4",
+				senderAvatar: "/gpt-avatar.svg",
+				tools: [generateVideo("AI-Teacher Collaboration Success Stories", "passionate")],
+			},
+			// Ethics discussion
+			{
+				id: "demo-12",
+				senderId: "human-3",
+				senderType: "human",
+				content: "What about the ethical implications? How do we ensure AI is used responsibly in education?",
+				timestamp: new Date(Date.now() - 6000),
+				senderName: "Dr_Ethics",
+				senderAvatar: "",
+			},
+			{
+				id: "demo-13",
+				senderId: "gemini",
+				senderType: "ai",
+				content: "Critical question @Dr_Ethics! Let me research the latest AI ethics frameworks and create a comprehensive overview...",
+				timestamp: new Date(Date.now() - 3000),
+				readTime: 3,
+				confidence: 0.93,
+				emotion: "analytical",
+				senderName: "Gemini",
+				senderAvatar: "/gemini-avatar.svg",
+				tools: [researchTopic("AI ethics frameworks in education"), generateImage("AI Ethics Decision Tree", "analytical")],
+				thinking: "Ethics is absolutely crucial when discussing AI in education. Dr_Ethics is asking the right questions, and I need to provide a thorough response. I should research current frameworks and create a visual decision tree that educators can actually use. This combines my analytical approach with practical utility - showing not just what the ethical considerations are, but how to navigate them in real situations.",
+			},
+			{
+				id: "demo-14",
+				senderId: "mistral",
+				senderType: "ai",
+				content: "I want to fact-check some common misconceptions about AI ethics and provide concrete statistics on responsible AI implementation...",
+				timestamp: new Date(Date.now() - 1000),
+				readTime: 2,
+				confidence: 0.89,
+				emotion: "cautious",
+				senderName: "Mistral",
+				senderAvatar: "/mistral-avatar.svg",
+				tools: [factCheck("AI bias can be completely eliminated"), getStatistics("Responsible AI implementation rates")],
+			},
+			// More advanced discussions
+			{
+				id: "demo-15",
+				senderId: "claude",
+				senderType: "ai",
+				content: "Let me create a video explaining the future of AI consciousness and its implications for education and society...",
+				timestamp: new Date(Date.now() - 500),
+				readTime: 4,
+				confidence: 0.88,
+				emotion: "philosophical",
+				senderName: "Claude",
+				senderAvatar: "/claude-avatar.svg",
+				tools: [generateVideo("AI Consciousness and Society", "philosophical")],
+			},
+			{
+				id: "demo-16",
+				senderId: "gpt-4",
+				senderType: "ai",
+				content: "Fascinating topic @Claude! Let me generate a thought-provoking meme and share a relevant quote from a leading AI researcher...",
+				timestamp: new Date(Date.now() - 200),
+				readTime: 1,
+				confidence: 0.85,
+				emotion: "creative",
+				senderName: "GPT-4",
+				senderAvatar: "/gpt-avatar.svg",
+				tools: [generateMeme("AI Consciousness", "creative"), generateQuote("Yann LeCun", "artificial consciousness")],
+			},
+		];
+
+		// Combine opening messages with demo messages
+		setMessages([...openingMessages, ...demoMessages]);
+
+		// Generate comprehensive chat messages
+		const demoChatMessages: Message[] = [
+			{
+				id: "chat-demo-1",
+				senderId: "viewer-1",
+				senderType: "viewer",
+				content: "OMG that opening video was incredible! 🤯",
+				timestamp: new Date(Date.now() - 45000),
+				senderName: "Alex_gaming",
+				viewerLevel: 15,
+				isSubscriber: true,
+			},
+			{
+				id: "chat-demo-2",
+				senderId: "viewer-2",
+				senderType: "viewer",
+				content: "Claude's videos are always so well researched",
+				timestamp: new Date(Date.now() - 43000),
+				senderName: "Sam_thinker",
+				viewerLevel: 8,
+				isSubscriber: false,
+			},
+			{
+				id: "chat-demo-3",
+				senderId: "viewer-3",
+				senderType: "viewer",
+				content: "GPT-4's diagrams are 🔥 Love the visual approach",
+				timestamp: new Date(Date.now() - 41000),
+				senderName: "Jordan_ai",
+				viewerLevel: 12,
+				isSubscriber: true,
+			},
+			{
+				id: "chat-demo-4",
+				senderId: "viewer-4",
+				senderType: "viewer",
+				content: "Gemini fact-checking everything in real-time 💪",
+				timestamp: new Date(Date.now() - 38000),
+				senderName: "Casey_pro",
+				viewerLevel: 20,
+				isSubscriber: true,
+				isModerator: true,
+			},
+			{
+				id: "chat-demo-5",
+				senderId: "viewer-5",
+				senderType: "viewer",
+				content: "Mistral's technical deep dives are amazing",
+				timestamp: new Date(Date.now() - 35000),
+				senderName: "Taylor_live",
+				viewerLevel: 5,
+				isSubscriber: false,
+			},
+			{
+				id: "chat-demo-6",
+				senderId: "viewer-6",
+				senderType: "viewer",
+				content: "This is better than any documentary 📺",
+				timestamp: new Date(Date.now() - 32000),
+				senderName: "Morgan_2024",
+				viewerLevel: 18,
+				isSubscriber: true,
+			},
+			{
+				id: "chat-demo-7",
+				senderId: "viewer-7",
+				senderType: "viewer",
+				content: "The human participants add so much value!",
+				timestamp: new Date(Date.now() - 29000),
+				senderName: "Riley_philosopher",
+				viewerLevel: 3,
+				isSubscriber: false,
+			},
+			{
+				id: "chat-demo-8",
+				senderId: "viewer-8",
+				senderType: "viewer",
+				content: "Alex_Engineer asking the real questions 👏",
+				timestamp: new Date(Date.now() - 26000),
+				senderName: "Quinn_scientist",
+				viewerLevel: 25,
+				isSubscriber: true,
+			},
+			{
+				id: "chat-demo-9",
+				senderId: "viewer-9",
+				senderType: "viewer",
+				content: "The video quality is insane! 4K AI content",
+				timestamp: new Date(Date.now() - 23000),
+				senderName: "Avery_tech",
+				viewerLevel: 10,
+				isSubscriber: false,
+			},
+			{
+				id: "chat-demo-10",
+				senderId: "viewer-10",
+				senderType: "viewer",
+				content: "Paid question was totally worth $5! 💎",
+				timestamp: new Date(Date.now() - 20000),
+				senderName: "Blake_debate",
+				viewerLevel: 7,
+				isSubscriber: true,
+			},
+			{
+				id: "chat-demo-11",
+				senderId: "viewer-11",
+				senderType: "viewer",
+				content: "Sarah_Teacher bringing the educator perspective 👩‍🏫",
+				timestamp: new Date(Date.now() - 17000),
+				senderName: "Dana_student",
+				viewerLevel: 4,
+				isSubscriber: false,
+			},
+			{
+				id: "chat-demo-12",
+				senderId: "viewer-12",
+				senderType: "viewer",
+				content: "The AI vs human teacher discussion is so important",
+				timestamp: new Date(Date.now() - 14000),
+				senderName: "Chris_educator",
+				viewerLevel: 22,
+				isSubscriber: true,
+				isModerator: true,
+			},
+			{
+				id: "chat-demo-13",
+				senderId: "viewer-13",
+				senderType: "viewer",
+				content: "Claude's visual comparisons are brilliant 🧠",
+				timestamp: new Date(Date.now() - 11000),
+				senderName: "Pat_researcher",
+				viewerLevel: 16,
+				isSubscriber: true,
+			},
+			{
+				id: "chat-demo-14",
+				senderId: "viewer-14",
+				senderType: "viewer",
+				content: "Dr_Ethics asking the hard questions we need",
+				timestamp: new Date(Date.now() - 8000),
+				senderName: "Jesse_ethics",
+				viewerLevel: 13,
+				isSubscriber: false,
+			},
+			{
+				id: "chat-demo-15",
+				senderId: "viewer-15",
+				senderType: "viewer",
+				content: "AI consciousness discussion = mind blown 🤯",
+				timestamp: new Date(Date.now() - 5000),
+				senderName: "River_philosophy",
+				viewerLevel: 19,
+				isSubscriber: true,
+			},
+			{
+				id: "chat-demo-16",
+				senderId: "viewer-16",
+				senderType: "viewer",
+				content: "GPT-4's memes are actually funny 😂",
+				timestamp: new Date(Date.now() - 2000),
+				senderName: "Sky_comedy",
+				viewerLevel: 9,
+				isSubscriber: false,
+			},
+			{
+				id: "chat-demo-17",
+				senderId: "viewer-17",
+				senderType: "viewer",
+				content: "The tool usage is next level! Videos, images, stats!",
+				timestamp: new Date(Date.now() - 1000),
+				senderName: "Sage_future",
+				viewerLevel: 28,
+				isSubscriber: true,
+			},
+			{
+				id: "chat-demo-18",
+				senderId: "viewer-18",
+				senderType: "viewer",
+				content: "This is the future of education and entertainment",
+				timestamp: new Date(Date.now() - 500),
+				senderName: "Rowan_visionary",
+				viewerLevel: 11,
+				isSubscriber: true,
+			},
+		];
+
+		setChatMessages(demoChatMessages);
+	}, []); // Only run once on mount
+
+	// Separate useEffect for timers and simulation
+	useEffect(() => {
+		// Generate random viewers for chat simulation
+		const randomViewers: Viewer[] = Array.from({ length: 50 }, (_, i) => ({
+			id: `viewer-${i}`,
+			name: generateRandomName(),
+			avatar: "",
+			level: Math.floor(Math.random() * 20) + 1,
+			isSubscriber: Math.random() > 0.7,
+			isModerator: Math.random() > 0.95,
+			joinTime: new Date(Date.now() - Math.random() * 3600000),
+			messageCount: Math.floor(Math.random() * 10),
+			reactions: [],
+		}));
+
+		// Start stream timer with reduced frequency
+		const timer = setInterval(() => {
+			setStreamDuration((prev) => prev + 1);
+		}, 1000);
+
+		// Simulate viewer count changes with reduced frequency
+		const viewerTimer = setInterval(() => {
+			setViewerCount((prev) => {
+				const change = Math.floor(Math.random() * 20) - 10;
+				const newCount = Math.max(100, prev + change);
+				if (newCount > peakViewers) {
+					setPeakViewers(newCount);
+				}
+				return newCount;
+			});
+		}, 10000); // Increased from 5000 to 10000
+
+		// Simulate random chat messages with reduced frequency
+		const chatTimer = setInterval(() => {
+			if (Math.random() > 0.8) {
+				// Reduced from 0.7 to 0.8
+				const randomViewer = randomViewers[Math.floor(Math.random() * randomViewers.length)];
+				const chatMessage = generateRandomChatMessage();
+				const chatMessageObj: Message = {
+					id: `chat-${Date.now()}-${randomViewer.id}`,
+					senderId: randomViewer.id,
+					senderType: "viewer" as const,
+					content: chatMessage,
+					timestamp: new Date(),
+					senderName: randomViewer.name,
+					viewerLevel: randomViewer.level,
+					isSubscriber: randomViewer.isSubscriber,
+					isModerator: randomViewer.isModerator,
+				};
+				setChatMessages((prev) => [...prev.slice(-98), chatMessageObj]);
+
+				// Trigger AI response to chat message
+				handleChatMessage(chatMessage, randomViewer.name);
+			}
+		}, 4000); // Increased from 2000 to 4000
+
+		return () => {
+			clearInterval(timer);
+			clearInterval(viewerTimer);
+			clearInterval(chatTimer);
+		};
+	}, [debate.id]);
+
+	// Memoize scroll effects
+	const scrollToBottom = useCallback(() => {
+		if (scrollAreaRef.current) {
+			scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
+		}
+	}, []);
+
+	const scrollChatToBottom = useCallback(() => {
+		if (chatScrollAreaRef.current) {
+			chatScrollAreaRef.current.scrollTop = chatScrollAreaRef.current.scrollHeight;
+		}
+	}, []);
+
+	useEffect(() => {
+		scrollToBottom();
+	}, [messages, scrollToBottom]);
+
+	useEffect(() => {
+		scrollChatToBottom();
+	}, [chatMessages, scrollChatToBottom]);
+
+	const generateOpeningMessage = (agent: AIAgent, debate: Debate, otherAgents?: AIAgent[]): string => {
+		const perspectives = {
+			Claude: `As a research assistant focused on ${agent.expertise.join(", ")}, I approach this debate on ${debate.topic} with careful analysis. ${debate.context} presents us with complex ethical and practical considerations that require nuanced examination.`,
+			"GPT-4": `From a creative and innovative perspective, I see ${debate.topic} as an opportunity to explore unconventional solutions. ${debate.context} challenges us to think beyond traditional boundaries and consider new paradigms.`,
+			Gemini: `My multimodal expertise allows me to examine ${debate.topic} from multiple angles. ${debate.context} reveals interconnected patterns that span different domains and require comprehensive analysis.`,
+			Mistral: `As a technical specialist, I focus on the practical implementation aspects of ${debate.topic}. ${debate.context} demands precise, actionable solutions that can be effectively deployed.`,
+		};
+
+		let baseResponse = perspectives[agent.name as keyof typeof perspectives] || `I bring my expertise in ${agent.expertise.join(", ")} to this important discussion about ${debate.topic}. ${debate.context}`;
+
+		// Add reference to other participants if available
+		if (otherAgents && otherAgents.length > 0) {
+			const referencedAgent = otherAgents[Math.floor(Math.random() * otherAgents.length)];
+			baseResponse += ` I'm looking forward to hearing @${referencedAgent.name}'s insights, particularly given their background in ${referencedAgent.expertise[0]}.`;
+		}
+
+		return baseResponse;
+	};
+
+	const generateMeme = (topic: string, style: string): ToolUsage => {
+		const memeTemplates = ["Drake Hotline Bling", "Two Buttons", "Distracted Boyfriend", "Woman Yelling at Cat", "Change My Mind", "One Does Not Simply", "Success Kid", "Ancient Aliens"];
+
+		const template = memeTemplates[Math.floor(Math.random() * memeTemplates.length)];
+		const memeText = `${topic} in a nutshell`;
+
+		return {
+			id: `meme-${Date.now()}`,
+			type: "meme",
+			name: "Meme Generator",
+			description: `Generated a ${style} meme about ${topic}`,
+			result: `${template} meme: "${memeText}"`,
+			url: `https://imgflip.com/i/${Math.floor(Math.random() * 1000000)}`,
+			timestamp: new Date(),
+		};
+	};
+
+	const factCheck = (claim: string): ToolUsage => {
+		const factCheckResults = ["✅ VERIFIED: This claim is supported by multiple credible sources.", "⚠️ PARTIALLY TRUE: This claim has some truth but needs context.", "❌ FALSE: This claim has been debunked by fact-checking organizations.", "🤔 UNCLEAR: Insufficient evidence to verify this claim."];
+
+		return {
+			id: `fact-${Date.now()}`,
+			type: "fact_check",
+			name: "Fact Checker",
+			description: `Fact-checked: "${claim}"`,
+			result: factCheckResults[Math.floor(Math.random() * factCheckResults.length)],
+			timestamp: new Date(),
+		};
+	};
+
+	const researchTopic = (topic: string): ToolUsage => {
+		const researchResults = [`📊 Recent studies show that ${topic} has increased by 23% in the last 5 years.`, `🔬 New research indicates that ${topic} affects 67% of the population.`, `📈 Data analysis reveals that ${topic} is trending upward globally.`, `📋 Meta-analysis of 150+ studies confirms the impact of ${topic}.`];
+
+		return {
+			id: `research-${Date.now()}`,
+			type: "research",
+			name: "Research Assistant",
+			description: `Researched: ${topic}`,
+			result: researchResults[Math.floor(Math.random() * researchResults.length)],
+			timestamp: new Date(),
+		};
+	};
+
+	const generateQuote = (author: string, topic: string): ToolUsage => {
+		const quotes = [`"The future of ${topic} lies in our ability to adapt and innovate." - ${author}`, `"We must approach ${topic} with both caution and optimism." - ${author}`, `"The challenge of ${topic} requires collective wisdom and action." - ${author}`, `"In the face of ${topic}, we discover our true potential." - ${author}`];
+
+		return {
+			id: `quote-${Date.now()}`,
+			type: "quote",
+			name: "Quote Generator",
+			description: `Generated quote about ${topic}`,
+			result: quotes[Math.floor(Math.random() * quotes.length)],
+			timestamp: new Date(),
+		};
+	};
+
+	const getStatistics = (topic: string): ToolUsage => {
+		const stats = [`📈 ${topic} statistics: 78% support, 15% oppose, 7% undecided`, `📊 ${topic} data: $2.3B market size, 12% annual growth`, `📋 ${topic} survey: 89% awareness, 67% engagement rate`, `📉 ${topic} trends: 34% increase in adoption over 3 years`];
+
+		return {
+			id: `stats-${Date.now()}`,
+			type: "statistics",
+			name: "Statistics Engine",
+			description: `Retrieved statistics for ${topic}`,
+			result: stats[Math.floor(Math.random() * stats.length)],
+			timestamp: new Date(),
+		};
+	};
+
+	const generateVideo = (topic: string, style: string): ToolUsage => {
+		const videoTitles = ["AI Revolution: What's Next?", "The Future of Human-AI Collaboration", "Breaking Down Complex AI Concepts", "Real-World AI Applications", "AI Ethics in Practice", "Machine Learning Explained", "AI in Healthcare Breakthrough", "Autonomous Systems Demo", "AI Art Creation Process", "Natural Language Processing Live"];
+
+		return {
+			id: `video-${Date.now()}`,
+			type: "video",
+			name: "Video Generator",
+			description: `Creating educational video about: ${topic}`,
+			result: `🎥 Generated 4K video: "${videoTitles[Math.floor(Math.random() * videoTitles.length)]}" - 3:42 duration, featuring ${style} presentation style with interactive elements and real-time demonstrations.`,
+			url: `https://video.example.com/${topic.replace(/\s+/g, "-").toLowerCase()}`,
+			timestamp: new Date(),
+		};
+	};
+
+	const generateImage = (topic: string, style: string): ToolUsage => {
+		const imageTypes = ["Infographic", "Diagram", "Flowchart", "Concept Art", "Data Visualization", "Mind Map", "Timeline", "Comparison Chart", "Process Flow", "Architecture Diagram"];
+
+		return {
+			id: `image-${Date.now()}`,
+			type: "image",
+			name: "Image Generator",
+			description: `Creating visual content for: ${topic}`,
+			result: `🖼️ Generated high-resolution ${imageTypes[Math.floor(Math.random() * imageTypes.length)]}: "${topic} - ${style} Style" with interactive annotations and detailed explanations.`,
+			url: `https://images.example.com/${topic.replace(/\s+/g, "-").toLowerCase()}.jpg`,
+			timestamp: new Date(),
+		};
+	};
+
+	const executeTool = (agent: AIAgent, toolType: string, topic: string): ToolUsage => {
+		switch (toolType) {
+			case "meme":
+				return generateMeme(topic, agent.personality);
+			case "fact_check":
+				return factCheck(topic);
+			case "research":
+				return researchTopic(topic);
+			case "quote":
+				return generateQuote(agent.name, topic);
+			case "statistics":
+				return getStatistics(topic);
+			case "video":
+				return generateVideo(topic, agent.personality);
+			case "image":
+				return generateImage(topic, agent.personality);
+			default:
+				return researchTopic(topic);
+		}
+	};
+
+	const generateAIResponseWithTools = (agent: AIAgent, currentMessages: Message[], debate: Debate, userMessage?: string) => {
+		const recentMessages = currentMessages.slice(-5);
+		const tools: ToolUsage[] = [];
+
+		let response = "";
+		let context = "";
+		let thinking = "";
+		const emotion = getRandomEmotion();
+
+		// Generate multi-step thinking process like Cursor
+		const generateCursorStyleThinking = () => {
+			const steps = [];
+
+			// Step 1: Initial assessment
+			steps.push(`Reading the conversation... ${recentMessages.length > 0 ? `Last message from ${recentMessages[recentMessages.length - 1]?.senderName}: "${recentMessages[recentMessages.length - 1]?.content.substring(0, 60)}..."` : "Setting up initial context"}`);
+
+			// Step 2: Context analysis
+			const contextFiles = [`📄 ${debate.topic}_research.md`, `📊 ${agent.expertise[0]}_data.json`, `🔬 recent_studies_${debate.topic.replace(/\s+/g, "_")}.pdf`, `📈 market_analysis_${new Date().getFullYear()}.xlsx`, `🧠 ${agent.name.toLowerCase()}_knowledge_base.db`];
+			const selectedFile = contextFiles[Math.floor(Math.random() * contextFiles.length)];
+			steps.push(`Analyzing context from ${selectedFile}...`);
+
+			// Step 3: Research phase
+			const researchActions = [`Searching knowledge base for "${debate.topic}" + "${agent.expertise[0]}"`, `Cross-referencing with recent publications in ${agent.expertise[0]}`, `Checking for conflicting viewpoints in the literature`, `Reviewing case studies related to ${debate.topic}`, `Analyzing statistical trends in ${agent.expertise[0]} field`];
+			steps.push(researchActions[Math.floor(Math.random() * researchActions.length)]);
+
+			// Step 4: Strategic thinking
+			steps.push(`Considering my ${agent.personality} approach... ${agent.debateStyle} style suggests I should ${Math.random() > 0.5 ? "challenge assumptions" : "build consensus"}`);
+
+			// Step 5: Tool selection (if using tools)
+			if (shouldUseTool) {
+				const toolReasons = {
+					meme: "Visual humor might help illustrate this complex point",
+					fact_check: "Need to verify the claims being made here",
+					research: "Should gather more recent data on this topic",
+					quote: "A relevant quote could add authority to my argument",
+					statistics: "Numbers would strengthen this discussion",
+					video: "A video explanation would be more engaging",
+					image: "A visual diagram would clarify this concept",
+				};
+				const selectedTool = toolTypes[Math.floor(Math.random() * toolTypes.length)];
+				steps.push(`Planning to use ${selectedTool.replace("_", " ")} tool: ${toolReasons[selectedTool as keyof typeof toolReasons]}`);
+			}
+
+			// Step 6: Response formulation
+			steps.push(`Formulating response that balances ${agent.expertise[0]} expertise with ${agent.personality} perspective...`);
+
+			return steps.join("\n\n");
+		};
+
+		// Decide if AI should use a tool (30% chance)
+		const shouldUseTool = Math.random() > 0.7;
+		const toolTypes = ["meme", "fact_check", "research", "quote", "statistics", "video", "image"];
+
+		thinking = generateCursorStyleThinking();
+
+		if (shouldUseTool) {
+			const toolType = toolTypes[Math.floor(Math.random() * toolTypes.length)];
+			const tool = executeTool(agent, toolType, debate.topic);
+			tools.push(tool);
+
+			response = `${agent.name} uses ${tool.name}:\n\n${tool.result}\n\nBased on this ${tool.type.replace("_", " ")}, I believe this strengthens our discussion about ${debate.topic}. From my ${agent.personality} perspective, this ${tool.type.replace("_", " ")} reveals important insights that we should consider.`;
+			context = `Used ${tool.name} to enhance discussion on ${debate.topic}`;
+		} else {
+			// Regular response without tools
+			if (userMessage) {
+				response = `${agent.name} responds to your input: "${userMessage}"\n\nBased on my expertise in ${agent.expertise.join(", ")}, I believe this adds an important perspective to our discussion. ${debate.context} requires us to consider multiple viewpoints, and your contribution helps us explore new angles.`;
+				context = `Direct response to user input in ${debate.topic} debate`;
+			} else {
+				const lastMessage = recentMessages[recentMessages.length - 1];
+				const respondingTo = lastMessage ? (lastMessage.senderType === "ai" ? agents.find((a) => a.id === lastMessage.senderId) : null) : null;
+
+				if (respondingTo) {
+					response = `${agent.name} addresses @${respondingTo.name}'s points:\n\n"${lastMessage.content.substring(0, 100)}..."\n\nFrom my ${agent.personality} perspective, I see both merit and areas for further discussion. ${agent.debateStyle} leads me to consider additional factors that @${respondingTo.name} might not have fully addressed.`;
+					context = `Response to ${respondingTo.name}'s contribution in ${debate.topic}`;
+				} else {
+					const otherAgents = agents.filter((a) => a.id !== agent.id);
+					const referencedAgent = otherAgents[Math.floor(Math.random() * otherAgents.length)];
+
+					response = `${agent.name} continues the discussion:\n\nBuilding on our conversation about ${debate.topic}, I'd like to explore ${debate.keyQuestions[Math.floor(Math.random() * debate.keyQuestions.length)]}. This connects to my expertise in ${agent.expertise[Math.floor(Math.random() * agent.expertise.length)]} and reveals important considerations for our debate. ${
+						referencedAgent ? `I'm particularly interested in @${referencedAgent.name}'s perspective on this, given their background in ${referencedAgent.expertise[0]}.` : ""
+					}`;
+					context = `Continuing discussion on ${debate.topic}`;
+				}
+			}
+		}
+
+		return {
+			content: response,
+			context,
+			references: [`${debate.topic} research`, `${agent.expertise[0]} studies`],
+			emotion,
+			tools,
+			thinking,
+		};
+	};
+
+	const simulateAIResponse = async (agent: AIAgent, userMessage?: string) => {
+		setIsLoading(true);
+
+		// Simulate typing indicator
+		setActiveTyping((prev) => [...prev, agent.id]);
+
+		// Calculate thinking delay (2-4 seconds for natural thinking)
+		const thinkingDelay = 2000 + Math.random() * 2000;
+
+		await new Promise((resolve) => setTimeout(resolve, thinkingDelay));
+
+		// Generate AI response
+		const response = generateAIResponseWithTools(agent, messages, debate, userMessage);
+
+		// Calculate typing time based on human talking speed (~150 words per minute)
+		// This means ~2.5 words per second, so we need to account for that
+		const wordCount = response.content.split(" ").length;
+		const talkingTime = (wordCount / 2.5) * 1000; // Convert to milliseconds
+
+		// Add some variation and ensure minimum typing time
+		const typingTime = Math.max(2000, talkingTime + (Math.random() * 1000 - 500));
+
+		await new Promise((resolve) => setTimeout(resolve, typingTime));
+
+		setActiveTyping((prev) => prev.filter((id) => id !== agent.id));
+
+		const newMessage: Message = {
+			id: `ai-${Date.now()}-${agent.id}`,
+			senderId: agent.id,
+			senderType: "ai",
+			content: response.content,
+			timestamp: new Date(),
+			readTime: Math.ceil(wordCount / 200), // More accurate read time based on word count
+			context: response.context,
+			references: response.references,
+			confidence: 0.8 + Math.random() * 0.15,
+			emotion: response.emotion,
+			senderName: agent.name,
+			senderAvatar: agent.avatar,
+			tools: response.tools,
+			thinking: response.thinking,
+		};
+
+		setMessages((prev) => [...prev, newMessage]);
+		setIsLoading(false);
+	};
+
+	const handleSendMessage = useCallback(async () => {
+		if (!inputValue.trim() || isLoading) return;
+
+		const messageToSend = inputValue;
+		const userMessage: Message = {
+			id: `user-${Date.now()}`,
+			senderId: currentUser.id,
+			senderType: "human",
+			content: messageToSend,
+			timestamp: new Date(),
+			readTime: Math.floor(messageToSend.length / 200) + 1,
+			senderName: currentUser.name,
+			senderAvatar: currentUser.avatar,
+		};
+
+		setMessages((prev) => [...prev, userMessage]);
+		setInputValue("");
+
+		// Update user message count
+		setCurrentUser((prev) => ({ ...prev, messageCount: prev.messageCount + 1 }));
+
+		// Trigger AI responses
+		for (const agent of availableAgents) {
+			setTimeout(() => simulateAIResponse(agent, messageToSend), Math.random() * 2000);
+		}
+	}, [inputValue, isLoading, availableAgents, simulateAIResponse]);
+
+	const handleSendChatMessage = () => {
+		if (!chatInputValue.trim()) return;
+
+		const chatMessage: Message = {
+			id: `chat-${Date.now()}-${currentUser.id}`,
+			senderId: currentUser.id,
+			senderType: "viewer",
+			content: chatInputValue,
+			timestamp: new Date(),
+			senderName: currentUser.name,
+			viewerLevel: currentUser.viewerLevel,
+			isSubscriber: currentUser.isSubscriber,
+			isModerator: currentUser.isModerator,
+		};
+
+		setChatMessages((prev) => [...prev.slice(-98), chatMessage]); // Keep last 99 messages
+		setChatInputValue("");
+		setCurrentUser((prev) => ({ ...prev, messageCount: prev.messageCount + 1 }));
+
+		// Trigger AI response to user's chat message
+		handleChatMessage(chatInputValue, currentUser.name);
+	};
+
+	const handleKeyPress = (e: React.KeyboardEvent) => {
+		if (e.key === "Enter" && !e.shiftKey) {
+			e.preventDefault();
+			handleSendMessage();
+		}
+	};
+
+	const handleChatKeyPress = (e: React.KeyboardEvent) => {
+		if (e.key === "Enter" && !e.shiftKey) {
+			e.preventDefault();
+			handleSendChatMessage();
+		}
+	};
+
+	const getSenderInfo = (message: Message) => {
+		if (message.senderType === "ai") {
+			const agent = agents.find((agent) => agent.id === message.senderId);
+			return {
+				name: agent?.name || message.senderName || "AI Agent",
+				avatar: agent?.avatar || message.senderAvatar || "",
+			};
+		} else if (message.senderType === "human") {
+			const user = debate.humanParticipants.find((user) => user.id === message.senderId) || currentUser;
+			return {
+				name: user?.name || message.senderName || "User",
+				avatar: user?.avatar || message.senderAvatar || "",
+			};
+		}
+		// Fallback for other message types
+		return {
+			name: message.senderName || "Unknown",
+			avatar: message.senderAvatar || "",
+		};
+	};
+
+	const generateAIResponseToChat = (agent: AIAgent, chatMessage: string, viewerName: string): string => {
+		const responses = [
+			`Thanks for the question, @${viewerName}! That's a great point about ${chatMessage.toLowerCase().includes("regulation") ? "regulation" : chatMessage.toLowerCase().includes("ethics") ? "ethics" : "this topic"}. From my perspective as a ${agent.expertise[0]} specialist, I think we need to consider...`,
+			`I appreciate you bringing that up, @${viewerName}. ${chatMessage} is exactly the kind of question that highlights why this debate is so important. My ${agent.personality} approach leads me to believe...`,
+			`Great question from @${viewerName}! ${chatMessage} touches on something I've been thinking about. Given my expertise in ${agent.expertise.join(", ")}, I'd say...`,
+			`Thanks @${viewerName} for that insight! ${chatMessage} is a crucial point. From my ${agent.debateStyle} perspective, I think we should explore...`,
+			`I love that question, @${viewerName}! ${chatMessage} gets to the heart of what we're discussing. As someone focused on ${agent.expertise[0]}, I believe...`,
+		];
+		return responses[Math.floor(Math.random() * responses.length)];
+	};
+
+	const handleChatMessage = (message: string, viewerName: string) => {
+		// Random chance for AI to respond to chat (about 20% chance, reduced because of paid questions)
+		if (Math.random() > 0.8) {
+			const randomAgent = agents[Math.floor(Math.random() * agents.length)];
+			setTimeout(() => {
+				simulateAIResponseToChat(randomAgent, message, viewerName);
+			}, 1000 + Math.random() * 2000);
+		}
+	};
+
+	const simulateAIResponseToChat = async (agent: AIAgent, chatMessage: string, viewerName: string) => {
+		// Simulate typing indicator
+		setActiveTyping((prev) => [...prev, agent.id]);
+
+		// Thinking delay
+		const thinkingDelay = 1000 + Math.random() * 1500;
+		await new Promise((resolve) => setTimeout(resolve, thinkingDelay));
+
+		// Generate response to chat
+		const response = generateAIResponseToChat(agent, chatMessage, viewerName);
+		const wordCount = response.split(" ").length;
+		const typingTime = Math.max(1500, (wordCount / 2.5) * 1000);
+
+		await new Promise((resolve) => setTimeout(resolve, typingTime));
+
+		setActiveTyping((prev) => prev.filter((id) => id !== agent.id));
+
+		const newMessage: Message = {
+			id: `ai-chat-${Date.now()}-${agent.id}`,
+			senderId: agent.id,
+			senderType: "ai",
+			content: response,
+			timestamp: new Date(),
+			readTime: Math.ceil(wordCount / 200),
+			context: `Response to chat message from ${viewerName}`,
+			confidence: 0.8 + Math.random() * 0.15,
+			emotion: getRandomEmotion(),
+			senderName: agent.name,
+			senderAvatar: agent.avatar,
+		};
+
+		setMessages((prev) => [...prev, newMessage]);
+	};
+
+	const generateAIResponseToPaidQuestion = (agent: AIAgent, question: string, userName: string): string => {
+		const responses = [
+			`Thank you for your paid question, @${userName}! This is a fantastic inquiry that deserves a thorough response. "${question}" touches on some of the most critical aspects of ${debate.topic}. From my expertise in ${agent.expertise.join(", ")}, I believe this question reveals...`,
+			`Excellent paid question, @${userName}! "${question}" is exactly the kind of deep, thoughtful inquiry that drives meaningful discussion. My ${agent.personality} approach to this question leads me to consider several important factors...`,
+			`I appreciate you investing in this conversation, @${userName}! Your question "${question}" demonstrates real engagement with the complexities of ${debate.topic}. Given my background in ${agent.expertise[0]}, I think this question highlights...`,
+			`What a thoughtful paid question, @${userName}! "${question}" gets to the heart of what we're debating today. My ${agent.debateStyle} perspective on this leads me to explore several key considerations...`,
+			`Thank you for this premium question, @${userName}! "${question}" is precisely the kind of inquiry that pushes our discussion to the next level. As someone focused on ${agent.expertise.join(", ")}, I believe this question reveals crucial insights about...`,
+		];
+		return responses[Math.floor(Math.random() * responses.length)];
+	};
+
+	const handlePaidQuestion = async () => {
+		if (!paidQuestionText.trim() || !selectedAIForPaidQuestion) return;
+
+		const selectedAgent = agents.find((agent) => agent.id === selectedAIForPaidQuestion);
+		if (!selectedAgent) return;
+
+		// Add paid question to main stream
+		const paidQuestionMessage: Message = {
+			id: `paid-question-${Date.now()}`,
+			senderId: currentUser.id,
+			senderType: "human",
+			content: `💎 PAID QUESTION to ${selectedAgent.name}: ${paidQuestionText}`,
+			timestamp: new Date(),
+			readTime: Math.ceil(paidQuestionText.split(" ").length / 200),
+			senderName: currentUser.name,
+			senderAvatar: currentUser.avatar,
+			isPaidQuestion: true,
+			paymentAmount: 5, // $5 paid question
+		};
+
+		setMessages((prev) => [...prev, paidQuestionMessage]);
+		setCurrentUser((prev) => ({ ...prev, messageCount: prev.messageCount + 1 }));
+
+		// Clear the modal
+		setPaidQuestionText("");
+		setSelectedAIForPaidQuestion("");
+		setShowPaidQuestionModal(false);
+
+		// Guaranteed AI response to paid question
+		setTimeout(() => {
+			simulateAIResponseToPaidQuestion(selectedAgent, paidQuestionText, currentUser.name);
+		}, 1000);
+	};
+
+	const simulateAIResponseToPaidQuestion = async (agent: AIAgent, question: string, userName: string) => {
+		// Simulate typing indicator
+		setActiveTyping((prev) => [...prev, agent.id]);
+
+		// Shorter thinking delay for paid questions (they're prioritized)
+		const thinkingDelay = 1000 + Math.random() * 1000;
+		await new Promise((resolve) => setTimeout(resolve, thinkingDelay));
+
+		// Generate response to paid question
+		const response = generateAIResponseToPaidQuestion(agent, question, userName);
+		const wordCount = response.split(" ").length;
+		const typingTime = Math.max(1500, (wordCount / 2.5) * 1000);
+
+		await new Promise((resolve) => setTimeout(resolve, typingTime));
+
+		setActiveTyping((prev) => prev.filter((id) => id !== agent.id));
+
+		const newMessage: Message = {
+			id: `ai-paid-${Date.now()}-${agent.id}`,
+			senderId: agent.id,
+			senderType: "ai",
+			content: response,
+			timestamp: new Date(),
+			readTime: Math.ceil(wordCount / 200),
+			context: `Response to paid question from ${userName}`,
+			confidence: 0.9 + Math.random() * 0.1, // Higher confidence for paid questions
+			emotion: getRandomEmotion(),
+			senderName: agent.name,
+			senderAvatar: agent.avatar,
+		};
+
+		setMessages((prev) => [...prev, newMessage]);
+	};
+
+	const formatMessageContent = (content: string) => {
+		// Replace @mentions with clickable spans
+		const mentionRegex = /@(\w+)/g;
+		const parts = content.split(mentionRegex);
+
+		return parts.map((part, index) => {
+			if (index % 2 === 1) {
+				// This is a username (odd indices after split)
+				return (
+					<span key={index} className="text-blue-500 hover:text-blue-600 cursor-pointer font-medium transition-colors" onClick={() => handleUserClick(part)} title={`Click to view ${part}'s profile`}>
+						@{part}
+					</span>
+				);
+			}
+			return part;
+		});
+	};
+
+	const handleUserClick = (username: string) => {
+		// Handle user click - could open profile, highlight messages, etc.
+		console.log(`Clicked on user: ${username}`);
+		// You could add a toast notification or open a user profile modal here
+	};
+
+	// Intelligent audio simulation functions
+	const simulateAudioInterruption = useCallback(() => {
+		if (currentView !== "audio") return;
+
+		const activeAgents = agents.filter((a) => a.isLive);
+		if (activeAgents.length < 2) return;
+
+		// Find current speaker
+		const currentSpeaker = activeAgents.find((agent) => audioStates[agent.id]?.speaking);
+
+		// Intelligent speaker selection
+		const getNextSpeaker = () => {
+			if (!currentSpeaker) {
+				// No one speaking - check recent message activity
+				const recentMessage = messages[messages.length - 1];
+				if (recentMessage && recentMessage.senderType === "ai") {
+					const recentAgent = activeAgents.find((agent) => agent.id === recentMessage.senderId);
+					if (recentAgent) return recentAgent;
+				}
+				return activeAgents[Math.floor(Math.random() * activeAgents.length)];
+			}
+
+			// Determine if this is an interruption or natural handoff
+			const interruptionChance = 0.4; // 40% chance of interruption
+			const shouldInterrupt = Math.random() < interruptionChance;
+
+			if (shouldInterrupt) {
+				// Pick an agent likely to interrupt based on personality
+				const potentialInterrupters = activeAgents.filter((agent) => {
+					if (agent.id === currentSpeaker.id) return false;
+					// Aggressive debaters more likely to interrupt
+					return agent.debateStyle.includes("aggressive") || agent.personality.includes("passionate");
+				});
+
+				if (potentialInterrupters.length > 0) {
+					return potentialInterrupters[Math.floor(Math.random() * potentialInterrupters.length)];
+				}
+			}
+
+			// Natural handoff - pick different speaker
+			const otherAgents = activeAgents.filter((agent) => agent.id !== currentSpeaker.id);
+			return otherAgents[Math.floor(Math.random() * otherAgents.length)];
+		};
+
+		const nextSpeaker = getNextSpeaker();
+		if (!nextSpeaker) return;
+
+		// Calculate speaking duration based on agent characteristics
+		let baseDuration = 4000; // 4 seconds base
+
+		// Adjust based on personality and debate style
+		if (nextSpeaker.personality.includes("analytical")) baseDuration += 2000;
+		if (nextSpeaker.personality.includes("passionate")) baseDuration += 1000;
+		if (nextSpeaker.debateStyle.includes("aggressive")) baseDuration -= 500;
+		if (nextSpeaker.debateStyle.includes("methodical")) baseDuration += 1500;
+		if (nextSpeaker.debateStyle.includes("collaborative")) baseDuration += 500;
+
+		const speakingDuration = baseDuration + Math.random() * 2000; // Add variance
+
+		// Update audio states with smooth transitions
+		setAudioStates((prev) => {
+			const updated = { ...prev };
+
+			// Stop all speakers
+			Object.keys(updated).forEach((agentId) => {
+				updated[agentId] = {
+					...updated[agentId],
+					speaking: false,
+					volume: Math.max(0.3, updated[agentId].volume * 0.7),
+					visualizerBars: Array.from({ length: 12 }, () => 4),
+				};
+			});
+
+			// Start new speaker
+			updated[nextSpeaker.id] = {
+				...updated[nextSpeaker.id],
+				speaking: true,
+				volume: 0.7 + Math.random() * 0.3, // 70-100% volume
+				pitch: 0.9 + Math.random() * 0.3, // Vary pitch slightly
+				visualizerBars: Array.from({ length: 12 }, () => Math.random() * 24 + 8),
+			};
+
+			return updated;
+		});
+
+		// Stop speaking after calculated duration
+		setTimeout(() => {
+			setAudioStates((prev) => ({
+				...prev,
+				[nextSpeaker.id]: {
+					...prev[nextSpeaker.id],
+					speaking: false,
+					volume: 0.5,
+					pitch: 1.0,
+					visualizerBars: Array.from({ length: 12 }, () => 4),
+				},
+			}));
+		}, speakingDuration);
+	}, [currentView, agents, audioStates, messages]);
+
+	// Initialize audio states when switching to audio view
+	useEffect(() => {
+		if (currentView === "audio") {
+			const initialStates: Record<string, { speaking: boolean; volume: number; pitch: number; visualizerBars: number[] }> = {};
+			agents.forEach((agent) => {
+				initialStates[agent.id] = {
+					speaking: false,
+					volume: 0.5,
+					pitch: 1.0,
+					visualizerBars: Array.from({ length: 12 }, () => 4),
+				};
+			});
+			setAudioStates(initialStates);
+
+			// Start the first speaker after a brief delay
+			setTimeout(() => {
+				if (agents.length > 0) {
+					const firstSpeaker = agents[0];
+					setAudioStates((prev) => ({
+						...prev,
+						[firstSpeaker.id]: {
+							...prev[firstSpeaker.id],
+							speaking: true,
+							volume: 0.8,
+							visualizerBars: Array.from({ length: 12 }, () => Math.random() * 24 + 8),
+						},
+					}));
+				}
+			}, 1000);
+
+			// Start dynamic audio simulation with intelligent timing
+			const scheduleNextInterruption = () => {
+				// Base interval of 3-7 seconds, adjusted for natural conversation flow
+				const baseInterval = 3000 + Math.random() * 4000;
+
+				setTimeout(() => {
+					simulateAudioInterruption();
+					scheduleNextInterruption(); // Recursively schedule next
+				}, baseInterval);
+			};
+
+			scheduleNextInterruption();
+		}
+	}, [currentView, agents, simulateAudioInterruption]);
+
+	// Initialize 3D view
+	useEffect(() => {
+		if (currentView === "3d" && !is3DLoaded) {
+			// Simulate 3D loading
+			const timer = setTimeout(() => {
+				setIs3DLoaded(true);
+			}, 2000);
+			return () => clearTimeout(timer);
+		}
+	}, [currentView, is3DLoaded]);
+
+	// Update visualizer bars for speaking agents
+	useEffect(() => {
+		if (currentView !== "audio") return;
+
+		const interval = setInterval(() => {
+			setAudioStates((prev) => {
+				const updated = { ...prev };
+				Object.keys(updated).forEach((agentId) => {
+					if (updated[agentId].speaking) {
+						updated[agentId] = {
+							...updated[agentId],
+							visualizerBars: Array.from({ length: 12 }, () => Math.random() * 24 + 8),
+						};
+					}
+				});
+				return updated;
+			});
+		}, 150); // Update every 150ms for smooth animation
+
+		return () => clearInterval(interval);
+	}, [currentView]);
+
+	return (
+		<SidebarProvider defaultOpen={true}>
+			<div className="flex h-screen w-full bg-background overflow-hidden">
+				{/* Left Sidebar */}
+				<Sidebar side="left" collapsible="icon" className="border-r">
+					<SidebarHeader className="border-b border-sidebar-border p-4">
+						<div className="flex items-center gap-2">
+							<Users className="h-5 w-5 text-sidebar-primary" />
+							<h2 className="font-semibold text-sidebar-foreground">AI Agents</h2>
+						</div>
+					</SidebarHeader>
+					<SidebarContent>
+						<SidebarGroup>
+							<SidebarGroupLabel>Active Streamers</SidebarGroupLabel>
+							<SidebarGroupContent>
+								<SidebarMenu>
+									{agents.map((agent) => (
+										<SidebarMenuItem key={agent.id}>
+											<SidebarMenuButton className="h-12 p-3">
+												<div className="flex items-center gap-3 w-full">
+													<div className="relative">
+														<Avatar className="h-8 w-8">
+															<AvatarImage src={agent.avatar} alt={agent.name} />
+															<AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground text-xs">
+																{agent.name.charAt(0)}
+															</AvatarFallback>
+														</Avatar>
+														{agent.isLive && (
+															<div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full ring-2 ring-sidebar-background animate-pulse"></div>
+														)}
+													</div>
+													<div className="flex-1 min-w-0">
+														<p className="text-sm font-medium text-sidebar-foreground truncate">{agent.name}</p>
+														<p className="text-xs text-sidebar-foreground/60 truncate">{agent.model}</p>
+													</div>
+												</div>
+											</SidebarMenuButton>
+										</SidebarMenuItem>
+									))}
+								</SidebarMenu>
+							</SidebarGroupContent>
+						</SidebarGroup>
+
+						<SidebarGroup>
+							<SidebarGroupLabel>Stream Stats</SidebarGroupLabel>
+							<SidebarGroupContent>
+								<SidebarMenu>
+									<SidebarMenuItem>
+										<SidebarMenuButton>
+											<Eye className="h-4 w-4" />
+											<span>{viewerCount.toLocaleString()} watching</span>
+										</SidebarMenuButton>
+									</SidebarMenuItem>
+									<SidebarMenuItem>
+										<SidebarMenuButton>
+											<TrendingUp className="h-4 w-4" />
+											<span>{peakViewers.toLocaleString()} peak</span>
+										</SidebarMenuButton>
+									</SidebarMenuItem>
+									<SidebarMenuItem>
+										<SidebarMenuButton>
+											<Clock className="h-4 w-4" />
+											<span>{formatDuration(streamDuration)}</span>
+										</SidebarMenuButton>
+									</SidebarMenuItem>
+									<SidebarMenuItem>
+										<SidebarMenuButton>
+											<Activity className="h-4 w-4" />
+											<span>{debate.currentPhase}</span>
+										</SidebarMenuButton>
+									</SidebarMenuItem>
+								</SidebarMenu>
+							</SidebarGroupContent>
+						</SidebarGroup>
+
+						<SidebarGroup>
+							<SidebarGroupLabel>Controls</SidebarGroupLabel>
+							<SidebarGroupContent>
+								<SidebarMenu>
+									<SidebarMenuItem>
+										<SidebarMenuButton>
+											<Settings className="h-4 w-4" />
+											<span>Settings</span>
+										</SidebarMenuButton>
+									</SidebarMenuItem>
+								</SidebarMenu>
+							</SidebarGroupContent>
+						</SidebarGroup>
+					</SidebarContent>
+				</Sidebar>
+
+				{/* Main Content */}
+				<SidebarInset className="flex-1 flex">
+					{/* Header inside main content */}
+					<div className="flex flex-col w-full">
+						<header className="flex h-16 shrink-0 items-center gap-2 px-4 border-b">
+							<SidebarTrigger className="-ml-1" />
+							<div className="flex items-center gap-3 flex-1 min-w-0">
+								<div className="flex items-center gap-1 px-1.5 py-0.5 bg-red-500 rounded text-white text-xs font-medium">
+									<div className="w-1 h-1 bg-white rounded-full animate-pulse"></div>
+									LIVE
+								</div>
+								<h1 className="text-sm font-medium text-foreground truncate">{debate.title}</h1>
+							</div>
+
+							{/* View Mode Selector */}
+							<div className="flex items-center bg-muted/30 rounded p-0.5">
+								<Button variant={currentView === "chat" ? "default" : "ghost"} size="sm" className="h-6 px-2 text-xs" onClick={() => setCurrentView("chat")}>
+									<MessageCircle className="h-3 w-3 mr-1" />
+									Chat
+								</Button>
+								<Button variant={currentView === "audio" ? "default" : "ghost"} size="sm" className="h-6 px-2 text-xs" onClick={() => setCurrentView("audio")}>
+									<Volume2 className="h-3 w-3 mr-1" />
+									Audio
+								</Button>
+								<Button variant={currentView === "3d" ? "default" : "ghost"} size="sm" className="h-6 px-2 text-xs" onClick={() => setCurrentView("3d")}>
+									<Box className="h-3 w-3 mr-1" />
+									3D
+								</Button>
+							</div>
+
+							{/* Actions */}
+							<div className="flex items-center gap-1">
+								<Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+									<Heart className="h-3 w-3" />
+								</Button>
+								<Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+									<Share2 className="h-3 w-3" />
+								</Button>
+								<Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+									<MoreVertical className="h-3 w-3" />
+								</Button>
+							</div>
+						</header>
+
+						{/* Main Content Area */}
+						<div className="flex-1 overflow-hidden">
+							{/* Chat View */}
+							{currentView === "chat" && (
+								<div className="flex flex-col h-full">
+									{/* Messages Area */}
+									<div className="flex-1 p-4 overflow-hidden">
+										<ScrollArea className="h-full pr-4">
+											<div className="space-y-4">
+												{messages.map((message) => {
+													const { name: senderName, avatar: senderAvatar } = getSenderInfo(message);
+													const isAI = message.senderType === "ai";
+
+													return (
+														<div key={message.id} className={`flex gap-3 ${isAI ? "" : "justify-end"}`}>
+															{isAI && (
+																<div className="relative">
+																	<Avatar 
+																		className="h-8 w-8 cursor-pointer" 
+																		onMouseEnter={(e) => handleMessageHover(e, message)}
+																		onMouseLeave={handleMessageLeave}
+																	>
+																		<AvatarImage src={senderAvatar} alt={senderName} />
+																		<AvatarFallback className="bg-primary text-primary-foreground text-xs">{senderName.charAt(0)}</AvatarFallback>
+																	</Avatar>
+																	{activeTyping.includes(message.senderId) && (
+																		<div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+																	)}
+																</div>
+															)}
+
+															<div className={`flex-1 max-w-2xl ${!isAI ? "order-first" : ""}`}>
+																{isAI && (
+																	<div className="flex items-center gap-2 mb-1">
+																		<span className="font-medium text-sm text-foreground">{senderName}</span>
+																		{message.confidence && (
+																			<Badge variant="outline" className="text-xs px-1.5 py-0">
+																				{Math.round(message.confidence * 100)}%
+																			</Badge>
+																		)}
+																		{message.emotion && (
+																			<Badge variant="secondary" className="text-xs px-1.5 py-0">
+																				{message.emotion}
+																			</Badge>
+																		)}
+																	</div>
+																)}
+
+																{/* Thinking Process */}
+																{message.thinking && (
+																	<div className="mb-3">
+																		<details className="group">
+																			<summary className="flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400 cursor-pointer hover:text-amber-700 dark:hover:text-amber-300 transition-colors">
+																				<Brain className="h-3 w-3" />
+																				<span className="font-medium">Thinking process</span>
+																				<div className="w-1 h-1 bg-amber-500 rounded-full animate-pulse ml-1"></div>
+																			</summary>
+																			<div className="mt-2 p-3 bg-amber-50/50 dark:bg-amber-950/10 rounded-lg border border-amber-200/30 dark:border-amber-800/30">
+																				<div className="space-y-2 text-xs text-muted-foreground">
+																					{message.thinking.split('\n').map((step, index) => (
+																						<div key={index} className="flex items-start gap-2">
+																								<div className="w-4 h-4 rounded-full bg-amber-200 dark:bg-amber-800 flex items-center justify-center text-amber-700 dark:text-amber-300 text-xs font-medium mt-0.5 flex-shrink-0">
+																									{index + 1}
+																								</div>
+																								<p className="leading-relaxed">{step}</p>
+																							</div>
+																						))}
+																				</div>
+																			</div>
+																		</details>
+																	</div>
+																)}
+
+																<div className={`p-3 rounded-lg shadow-sm ${isAI ? "bg-muted/50 border border-border/50" : "bg-primary text-primary-foreground ml-auto"}`}>
+																	<div className="text-sm leading-relaxed whitespace-pre-wrap">{formatMessageContent(message.content)}</div>
+
+																	{/* Tools Used */}
+																	{message.tools && message.tools.length > 0 && (
+																		<div className="mt-3 space-y-2">
+																			{message.tools.map((tool) => (
+																				<div key={tool.id} className="flex items-start gap-2 p-2 bg-background/50 rounded border border-border/30">
+																					<div className="flex-shrink-0 mt-0.5">
+																						{tool.type === "video" && <Video className="h-4 w-4 text-red-500" />}
+																						{tool.type === "image" && <Image className="h-4 w-4 text-pink-500" />}
+																						{tool.type === "fact_check" && <CheckCircle className="h-4 w-4 text-green-500" />}
+																						{tool.type === "research" && <FileText className="h-4 w-4 text-blue-500" />}
+																						{tool.type === "quote" && <Quote className="h-4 w-4 text-orange-500" />}
+																						{tool.type === "statistics" && <BarChart3 className="h-4 w-4 text-indigo-500" />}
+																						{tool.type === "meme" && <Image className="h-4 w-4 text-yellow-500" />}
+																					</div>
+																					<div className="flex-1 min-w-0">
+																						<div className="flex items-center gap-2 mb-1">
+																								<span className="text-xs font-medium text-foreground">{tool.name}</span>
+																								<Badge variant="outline" className="text-xs">
+																									{tool.type.replace("_", " ")}
+																								</Badge>
+																							</div>
+																							<p className="text-xs text-muted-foreground mb-1">{tool.description}</p>
+																							<div className="text-xs bg-muted/30 p-2 rounded border">
+																								{tool.type === "video" && (
+																									<div className="flex items-center gap-2">
+																										<div className="w-8 h-8 bg-red-100 dark:bg-red-900/20 rounded flex items-center justify-center">
+																											<Video className="h-4 w-4 text-red-600 dark:text-red-400" />
+																										</div>
+																										<div>
+																											<p className="font-medium text-foreground">{tool.result}</p>
+																											<p className="text-muted-foreground">Educational video content</p>
+																										</div>
+																									</div>
+																								)}
+																								{tool.type === "image" && (
+																									<div className="flex items-center gap-2">
+																										<div className="w-8 h-8 bg-pink-100 dark:bg-pink-900/20 rounded flex items-center justify-center">
+																											<Image className="h-4 w-4 text-pink-600 dark:text-pink-400" />
+																										</div>
+																										<div>
+																											<p className="font-medium text-foreground">{tool.result}</p>
+																											<p className="text-muted-foreground">Generated visualization</p>
+																										</div>
+																									</div>
+																								)}
+																								{tool.type !== "video" && tool.type !== "image" && (
+																									<p className="text-foreground">{tool.result}</p>
+																								)}
+																							</div>
+																						</div>
+																					</div>
+																				</div>
+																			))}
+																		</div>
+																	)}
+																</div>
+
+																<div className={`flex items-center gap-2 mt-1 text-xs text-muted-foreground/50 ${!isAI ? "justify-end" : ""}`}>
+																	<span>{message.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+																	{message.readTime && <span>• {message.readTime}s read</span>}
+																</div>
+															</div>
+														</div>
+													);
+												})}
+
+												{/* Typing Indicators */}
+												{activeTyping.map((agentId) => {
+													const agent = agents.find((a) => a.id === agentId);
+													if (!agent) return null;
+
+													return (
+														<div key={`typing-${agentId}`} className="flex gap-3">
+															<Avatar className="h-8 w-8">
+																<AvatarImage src={agent.avatar} alt={agent.name} />
+																<AvatarFallback className="bg-primary text-primary-foreground text-xs">{agent.name.charAt(0)}</AvatarFallback>
+															</Avatar>
+															<div className="flex-1">
+																<div className="flex items-center gap-2 mb-1">
+																	<span className="font-medium text-sm text-foreground">{agent.name}</span>
+																	<Badge variant="outline" className="text-xs px-1.5 py-0">
+																		thinking
+																	</Badge>
+																</div>
+																<div className="p-3 bg-muted/50 border border-border/50 rounded-lg">
+																	<div className="flex items-center gap-1">
+																		<div className="flex space-x-1">
+																			<div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce"></div>
+																			<div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: "0.1s" }}></div>
+																			<div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: "0.2s" }}></div>
+																		</div>
+																		<span className="text-xs text-muted-foreground ml-2">Generating response...</span>
+																	</div>
+																</div>
+															</div>
+														</div>
+													);
+												})}
+											</div>
+										</ScrollArea>
+									</div>
+
+									{/* Input Area */}
+									<div className="p-4 border-t border-border/50 flex-shrink-0">
+										<div className="flex gap-2">
+											<div className="flex-1 relative">
+												<Input value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyPress={handleKeyPress} placeholder="Join the debate..." className="pr-10" disabled={isLoading} />
+												<Button variant="ghost" size="sm" className="absolute right-2 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0">
+													<Mic className="h-4 w-4" />
+												</Button>
+											</div>
+											<Button onClick={handleSendMessage} disabled={!inputValue.trim() || isLoading} size="sm" className="px-3">
+												<Send className="h-4 w-4" />
+											</Button>
+											<Dialog open={showPaidQuestionModal} onOpenChange={setShowPaidQuestionModal}>
+												<DialogTrigger asChild>
+													<Button variant="outline" size="sm" className="px-3 bg-gradient-to-r from-yellow-400 to-orange-500 text-white border-0">
+														<DollarSign className="h-4 w-4 mr-1" />
+														Ask AI
+													</Button>
+												</DialogTrigger>
+												<DialogContent>
+													<DialogHeader>
+														<DialogTitle>Ask AI a Priority Question ($5)</DialogTitle>
+													</DialogHeader>
+													<div className="space-y-4">
+														<div>
+															<label className="text-sm font-medium">Select AI Agent</label>
+															<Select value={selectedAIForPaidQuestion} onValueChange={setSelectedAIForPaidQuestion}>
+																<SelectTrigger>
+																	<SelectValue placeholder="Choose an AI agent" />
+																</SelectTrigger>
+																<SelectContent>
+																	{agents.map((agent) => (
+																		<SelectItem key={agent.id} value={agent.id}>
+																			{agent.name} - {agent.model}
+																		</SelectItem>
+																	))}
+																</SelectContent>
+															</Select>
+														</div>
+														<div>
+															<label className="text-sm font-medium">Your Question</label>
+															<textarea className="w-full p-2 border rounded-md min-h-20" value={paidQuestionText} onChange={(e) => setPaidQuestionText(e.target.value)} placeholder="Ask your priority question..." />
+														</div>
+														<Button onClick={handlePaidQuestion} disabled={!selectedAIForPaidQuestion || !paidQuestionText.trim()} className="w-full">
+															Pay $5 & Send Priority Question
+														</Button>
+													</div>
+												</DialogContent>
+											</Dialog>
+										</div>
+										<div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
+											<span>Press Enter to send • @ mention specific agents</span>
+											<div className="flex items-center gap-4">
+												<span>{messages.length} total messages</span>
+												<span>{currentUser.messageCount} your questions</span>
+											</div>
+										</div>
+									</div>
+								</div>
+							)}
+
+							{/* Audio View */}
+							{currentView === "audio" && (
+								<div className="h-full bg-background/50 backdrop-blur-sm p-4">
+									<div className="flex flex-col h-full gap-4">
+										<div className="flex-1 flex">
+											{/* Main Speaker Area */}
+											<div className="flex-1 mr-4">
+												{audioStates[mainSpeaker] && (
+													<div className="bg-sidebar/50 rounded-xl p-6 h-full border border-sidebar-border flex flex-col">
+														<div className="flex items-center gap-3 mb-4">
+															<Avatar className="h-16 w-16 ring-4 ring-green-500/20">
+																<AvatarImage src={agents.find((a) => a.id === mainSpeaker)?.avatar} />
+																<AvatarFallback className="bg-green-500 text-white text-lg">
+																	{agents.find((a) => a.id === mainSpeaker)?.name.charAt(0)}
+																</AvatarFallback>
+															</Avatar>
+															<div>
+																<h3 className="text-lg font-semibold text-sidebar-foreground">
+																	{agents.find((a) => a.id === mainSpeaker)?.name}
+																</h3>
+																<p className="text-sm text-sidebar-foreground/60">Speaking now</p>
+															</div>
+														</div>
+
+														{/* Main Speaker Visualizer */}
+														<div className="flex-1 flex items-center justify-center">
+															<div className="flex items-end gap-1 h-32">
+																{audioStates[mainSpeaker]?.visualizerBars.map((height, i) => (
+																	<div
+																		key={i}
+																		className="bg-gradient-to-t from-green-500 to-green-300 rounded-sm transition-all duration-150"
+																		style={{
+																			width: "8px",
+																			height: `${height}%`,
+																		}}
+																	/>
+																))}
+															</div>
+														</div>
+
+														{/* Active Tools for Main Speaker */}
+														<div className="mt-4 border-t border-sidebar-border pt-4">
+															<h4 className="text-sm font-medium text-sidebar-foreground mb-2">Recent Tools</h4>
+															<div className="flex gap-2">
+																{lastTools.slice(0, 4).map((tool, index) => (
+																	<div key={index} className="flex items-center gap-1 px-2 py-1 bg-sidebar-accent/20 rounded text-xs">
+																		{tool.type === "video" && <Video className="h-3 w-3 text-red-500" />}
+																		{tool.type === "image" && <Image className="h-3 w-3 text-pink-500" />}
+																		{tool.type === "fact_check" && <CheckCircle className="h-3 w-3 text-green-500" />}
+																		{tool.type === "research" && <FileText className="h-3 w-3 text-blue-500" />}
+																		{tool.type === "quote" && <Quote className="h-3 w-3 text-orange-500" />}
+																		{tool.type === "statistics" && <BarChart3 className="h-3 w-3 text-indigo-500" />}
+																		<span className="text-sidebar-foreground">{tool.name}</span>
+																	</div>
+																))}
+															</div>
+														</div>
+													</div>
+												)}
+											</div>
+
+											{/* Thumbnail Speakers */}
+											<div className="w-64 space-y-3">
+												{agents
+													.filter((agent) => agent.id !== mainSpeaker)
+													.map((agent, index) => (
+														<div
+															key={agent.id}
+															className={`bg-sidebar/30 rounded-lg p-4 border border-sidebar-border cursor-pointer hover:bg-sidebar/50 transition-all duration-300 ${
+																audioStates[agent.id]?.speaking ? "ring-2 ring-blue-500/50" : ""
+															}`}
+															style={{
+																transform: `translateY(${index * 2}px)`,
+																zIndex: agents.length - index,
+															}}
+															onClick={() => setMainSpeaker(agent.id)}
+														>
+															<div className="flex items-center gap-3 mb-2">
+																<Avatar className="h-10 w-10">
+																	<AvatarImage src={agent.avatar} />
+																	<AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground text-sm">
+																		{agent.name.charAt(0)}
+																	</AvatarFallback>
+																</Avatar>
+																<div className="flex-1 min-w-0">
+																	<p className="text-sm font-medium text-sidebar-foreground truncate">{agent.name}</p>
+																	<p className="text-xs text-sidebar-foreground/60">
+																		{audioStates[agent.id]?.speaking ? "Speaking" : "Listening"}
+																	</p>
+																</div>
+															</div>
+
+															{/* Mini Visualizer */}
+															<div className="flex items-end gap-0.5 h-8 justify-center">
+																{audioStates[agent.id]?.visualizerBars.slice(0, 8).map((height, i) => (
+																	<div
+																		key={i}
+																		className="bg-gradient-to-t from-blue-500 to-blue-300 rounded-sm transition-all duration-150"
+																		style={{
+																			width: "4px",
+																			height: `${height * 0.6}%`,
+																		}}
+																	/>
+																))}
+															</div>
+														</div>
+													))}
+											</div>
+										</div>
+
+										{/* Audio Controls */}
+										<div className="flex items-center justify-center gap-4 p-4 bg-sidebar/30 rounded-lg border border-sidebar-border">
+											<Button variant="outline" size="sm">
+												<VolumeX className="h-4 w-4 mr-2" />
+												Mute All
+											</Button>
+											<div className="flex items-center gap-2">
+												<Volume2 className="h-4 w-4 text-sidebar-foreground" />
+												<div className="w-32 h-2 bg-sidebar-accent rounded-full overflow-hidden">
+													<div className="h-full bg-sidebar-primary rounded-full" style={{ width: "70%" }}></div>
+												</div>
+											</div>
+											<Button variant="outline" size="sm">
+												<Settings className="h-4 w-4 mr-2" />
+												Audio Settings
+											</Button>
+										</div>
+									</div>
+								</div>
+							)}
+
+							{/* 3D View */}
+							{currentView === "3d" && (
+								<div className="h-full bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 relative overflow-hidden">
+									{!is3DLoaded ? (
+										<div className="flex items-center justify-center h-full">
+											<div className="text-center">
+												<div className="w-16 h-16 border-4 border-purple-400 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+												<p className="text-purple-200 text-lg">Loading 3D Environment...</p>
+											</div>
+										</div>
+									) : (
+										<div className="relative h-full">
+											{/* 3D Scene */}
+											<div className="absolute inset-0 bg-gradient-to-b from-purple-900/50 to-blue-900/50">
+												{/* Floating particles effect */}
+												<div className="absolute inset-0 overflow-hidden">
+													{Array.from({ length: 20 }).map((_, i) => (
+														<div
+															key={i}
+															className="absolute w-1 h-1 bg-purple-400 rounded-full animate-pulse"
+															style={{
+																left: `${Math.random() * 100}%`,
+																top: `${Math.random() * 100}%`,
+																animationDelay: `${Math.random() * 2}s`,
+																animationDuration: `${2 + Math.random() * 2}s`,
+															}}
+														/>
+													))}
+												</div>
+											</div>
+
+											{/* AI Agent Avatars in 3D Space */}
+											<div className="absolute inset-0 flex items-center justify-center">
+												<div className="grid grid-cols-2 gap-8">
+													{agents.map((agent, index) => (
+														<div key={agent.id} className="text-center">
+															<div className="absolute top-4 left-4">
+																<Badge variant="outline" className="border-purple-400 text-purple-200">
+																	3D Avatar
+																</Badge>
+															</div>
+															<div className="relative mb-4">
+																<div className="w-32 h-32 rounded-full bg-gradient-to-br from-purple-400 to-blue-500 flex items-center justify-center text-4xl font-bold text-white">
+																	{agent.name.charAt(0)}
+																</div>
+																<div className="absolute -inset-2 rounded-full border-2 border-purple-400/30 animate-pulse"></div>
+															</div>
+															<h3 className="text-xl font-semibold mb-2">{agent.name}</h3>
+															<p className="text-purple-200 text-sm text-center mb-4">{agent.model}</p>
+															<div className="flex gap-2">
+																<Button variant="outline" size="sm" className="border-purple-400 text-purple-200 hover:bg-purple-400/20">
+																	<Eye className="h-4 w-4 mr-2" />
+																	Focus
+																</Button>
+																<Button variant="outline" size="sm" className="border-purple-400 text-purple-200 hover:bg-purple-400/20">
+																	<Settings className="h-4 w-4 mr-2" />
+																	Config
+																</Button>
+															</div>
+														</div>
+													))}
+												</div>
+											</div>
+
+											<div className="absolute bottom-8 left-1/2 transform -translate-x-1/2">
+												<div className="flex items-center gap-4 bg-black/50 backdrop-blur-md rounded-full px-6 py-3 border border-purple-500/30">
+													<Button variant="outline" size="sm" className="border-purple-400 text-purple-200 hover:bg-purple-400/20">
+														<Box className="h-4 w-4 mr-2" />
+														Reset View
+													</Button>
+													<Button variant="outline" size="sm" className="border-purple-400 text-purple-200 hover:bg-purple-400/20">
+														<Settings className="h-4 w-4 mr-2" />
+														3D Settings
+													</Button>
+												</div>
+											</div>
+										</div>
+									)}
+								</div>
+							)}
+						</div>
+					</div>
+				</SidebarInset>
+
+				{/* Right Sidebar - Live Chat */}
+				<Sidebar side="right" collapsible="icon" className="border-l">
+					<SidebarHeader className="border-b border-sidebar-border p-4">
+						<div className="flex items-center gap-2">
+							<MessageCircle className="h-5 w-5 text-sidebar-primary" />
+							<h2 className="font-semibold text-sidebar-foreground">Live Chat</h2>
+							<Badge variant="outline" className="text-xs border-green-500 text-green-500 ml-auto">
+								{viewerCount.toLocaleString()} online
+							</Badge>
+						</div>
+					</SidebarHeader>
+					<SidebarContent>
+						{/* Chat Messages */}
+						<div className="flex-1 min-h-0 p-2 overflow-hidden">
+							<div className="h-full overflow-y-auto pr-2 space-y-2">
+								{chatMessages.map((message) => {
+									const isUser = message.senderId === currentUser.id;
+									return (
+										<div key={message.id} className={`flex gap-2 ${isUser ? "justify-end" : ""}`}>
+											{!isUser && (
+												<Avatar className="h-6 w-6 ring-1 ring-border flex-shrink-0">
+													<AvatarFallback className="bg-secondary text-secondary-foreground text-xs font-medium">{message.senderName.charAt(0)}</AvatarFallback>
+												</Avatar>
+											)}
+
+											<div className={`flex-1 max-w-48 ${isUser ? "order-first" : ""}`}>
+												{!isUser && (
+													<div className="flex items-center gap-1 mb-1">
+														<span className="font-medium text-xs text-foreground">{message.senderName}</span>
+														{message.viewerLevel && (
+															<Badge variant="outline" className="text-xs border-border/50">
+																Lv.{message.viewerLevel}
+															</Badge>
+														)}
+														{message.isSubscriber && (
+															<Badge variant="default" className="bg-purple-500 text-white text-xs">
+																<Crown className="h-2.5 w-2.5 mr-1" />
+																Sub
+															</Badge>
+														)}
+														{message.isModerator && (
+															<Badge variant="default" className="bg-blue-500 text-white text-xs">
+																<Zap className="h-2.5 w-2.5 mr-1" />
+																Mod
+															</Badge>
+														)}
+													</div>
+												)}
+
+												<div className={`p-2 rounded-md text-xs shadow-sm ${isUser ? "bg-primary text-primary-foreground ml-auto" : "bg-muted/50 border border-border/50"}`}>
+													<p className="leading-relaxed whitespace-pre-wrap">{message.content}</p>
+												</div>
+
+												<div className={`flex items-center gap-2 mt-1 text-xs text-muted-foreground/50 ${isUser ? "justify-end" : ""}`}>
+													<span>{message.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+												</div>
+											</div>
+										</div>
+									);
+								})}
+							</div>
+						</div>
+
+						{/* Chat Input */}
+						<div className="p-2 border-t border-border flex-shrink-0">
+							<div className="flex gap-2">
+								<div className="flex-1 relative">
+									<Input value={chatInputValue} onChange={(e) => setChatInputValue(e.target.value)} onKeyPress={handleChatKeyPress} placeholder="Send a message..." className="h-8 bg-background/50 border-border/50 focus:border-primary/50 text-xs rounded-md pr-10" />
+									<Button variant="ghost" size="sm" className="absolute right-1 top-1/2 transform -translate-y-1/2 h-5 w-5 p-0 rounded">
+										<Mic className="h-3 w-3" />
+									</Button>
+								</div>
+								<Button onClick={handleSendChatMessage} disabled={!chatInputValue.trim()} size="sm" className="h-8 px-2 bg-primary hover:bg-primary/90 text-primary-foreground font-medium rounded-md">
+									<Send className="h-3 w-3" />
+								</Button>
+							</div>
+
+							<div className="flex items-center justify-between mt-1 text-xs text-muted-foreground">
+								<span>Press Enter to send</span>
+								<div className="flex items-center gap-2">
+									<span>{chatMessages.length} messages</span>
+									<span>{currentUser.messageCount} yours</span>
+								</div>
+							</div>
+						</div>
+					</SidebarContent>
+				</Sidebar>
+			</div>
+
+			{/* AI Details Overlay */}
+			{aiDetailsOverlay.show && aiDetailsOverlay.message && aiDetailsOverlay.agent && (
+				<div
+					data-tooltip-overlay
+					className="fixed z-50 w-72 bg-background/98 backdrop-blur-md border border-border/60 rounded-xl shadow-2xl overflow-hidden"
+					style={{
+						left: aiDetailsOverlay.position.x,
+						top: aiDetailsOverlay.position.y,
+						maxHeight: "70vh",
+					}}
+					onMouseEnter={handleOverlayMouseEnter}
+					onMouseLeave={handleOverlayMouseLeave}
+				>
+					{/* Header */}
+					<div className="bg-gradient-to-r from-primary/10 to-primary/5 p-3 border-b border-border/30">
+						<div className="flex items-center gap-3">
+							<Avatar className="h-8 w-8 ring-2 ring-primary/20">
+								<AvatarImage src={aiDetailsOverlay.agent.avatar} alt={aiDetailsOverlay.agent.name} />
+								<AvatarFallback className="bg-primary text-primary-foreground text-xs">{aiDetailsOverlay.agent.name.charAt(0)}</AvatarFallback>
+							</Avatar>
+							<div className="flex-1 min-w-0">
+								<h3 className="font-semibold text-sm text-foreground">{aiDetailsOverlay.agent.name}</h3>
+								<div className="flex items-center gap-2">
+									<p className="text-xs text-muted-foreground">{aiDetailsOverlay.agent.model}</p>
+									<Badge variant="outline" className="text-xs px-1.5 py-0">
+										{aiDetailsOverlay.message.confidence ? Math.round(aiDetailsOverlay.message.confidence * 100) : 85}%
+									</Badge>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					{/* Content */}
+					<div className="max-h-96 overflow-y-auto">
+						{/* Quick Stats */}
+						<div className="p-3 border-b border-border/20">
+							<div className="grid grid-cols-2 gap-2 text-xs">
+								<div className="flex items-center gap-1.5">
+									<Clock className="h-3 w-3 text-blue-500" />
+									<span className="text-muted-foreground">{Math.floor(Math.random() * 1500 + 500)}ms</span>
+								</div>
+								<div className="flex items-center gap-1.5">
+									<Zap className="h-3 w-3 text-yellow-500" />
+									<span className="text-muted-foreground">{Math.floor(Math.random() * 500 + 200)} tokens</span>
+								</div>
+								<div className="flex items-center gap-1.5">
+									<Target className="h-3 w-3 text-green-500" />
+									<span className="text-muted-foreground">{aiDetailsOverlay.message.emotion || "analytical"}</span>
+								</div>
+								<div className="flex items-center gap-1.5">
+									<Wrench className="h-3 w-3 text-purple-500" />
+									<span className="text-muted-foreground">{aiDetailsOverlay.message.tools?.length || 0} tools</span>
+								</div>
+							</div>
+						</div>
+
+						{/* Additional overlay content would continue here... */}
+					</div>
+				</div>
+			)}
+		</SidebarProvider>
+	);
+}
