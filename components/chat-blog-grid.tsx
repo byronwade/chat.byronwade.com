@@ -8,7 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { getAllCaseStudies } from "@/lib/chat-data";
-import { BookOpen, Search, ArrowRight, Zap } from "lucide-react";
+import { BookOpen, Search, ArrowRight, Zap, Clock, Users } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export function ChatBlogGrid() {
@@ -43,66 +43,79 @@ export function ChatBlogGrid() {
 	const getDifficultyColor = (difficulty: string) => {
 		switch (difficulty) {
 			case "beginner":
-				return "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
+				return "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20";
 			case "intermediate":
-				return "bg-amber-500/10 text-amber-400 border-amber-500/20";
+				return "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20";
 			case "advanced":
-				return "bg-red-500/10 text-red-400 border-red-500/20";
+				return "bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20";
 			default:
-				return "bg-zinc-500/10 text-zinc-400 border-zinc-500/20";
+				return "bg-muted text-muted-foreground border-border";
 		}
 	};
 
 	return (
-		<div className="min-h-screen bg-black text-white">
-			{/* Ultra-minimal Hero */}
-			<div className="relative">
-				<div className="absolute inset-0 bg-gradient-to-br from-zinc-900/20 via-black to-zinc-900/20" />
-				<div className="relative max-w-6xl mx-auto px-6 pt-24 pb-16">
-					<div className="text-center space-y-6">
-						<div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-800/50 border border-zinc-700/50">
-							<Zap className="h-3 w-3 text-blue-400" />
-							<span className="text-xs text-zinc-400 font-medium">AI Case Studies</span>
+		<div className="min-h-screen bg-background">
+			{/* Hero Section - Vercel Style */}
+			<div className="relative overflow-hidden">
+				{/* Background Pattern */}
+				<div className="absolute inset-0 bg-grid-pattern opacity-[0.02] dark:opacity-[0.05]" />
+				<div className="absolute inset-0 bg-gradient-to-br from-blue-50/50 via-background to-purple-50/50 dark:from-blue-950/10 dark:via-background dark:to-purple-950/10" />
+
+				<div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-16 pb-20 sm:pt-24 sm:pb-28">
+					<div className="text-center">
+						{/* Badge */}
+						<div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20 mb-8">
+							<Zap className="h-3.5 w-3.5 text-primary" />
+							<span className="text-sm font-medium text-primary">AI Case Studies</span>
 						</div>
 
-						<h1 className="text-5xl md:text-7xl font-bold tracking-tight">
-							<span className="text-white">Multi-Agent</span>
-							<br />
-							<span className="bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">Conversations</span>
+						{/* Title */}
+						<h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-foreground mb-6">
+							<span className="block">Multi-Agent</span>
+							<span className="block bg-gradient-to-r from-blue-600 to-purple-600 dark:from-blue-400 dark:to-purple-400 bg-clip-text text-transparent">Conversations</span>
 						</h1>
 
-						<p className="text-xl text-zinc-400 max-w-2xl mx-auto leading-relaxed">Deep insights from AI-to-AI conversations</p>
+						{/* Description */}
+						<p className="text-lg sm:text-xl text-muted-foreground max-w-3xl mx-auto leading-relaxed mb-10">Explore fascinating conversations between AI agents. Each chat is analyzed as a case study with key insights, learning opportunities, and practical applications.</p>
 
-						<div className="flex items-center justify-center gap-8 text-sm text-zinc-500">
+						{/* Stats */}
+						<div className="flex items-center justify-center gap-8 text-sm text-muted-foreground">
 							<div className="flex items-center gap-2">
-								<div className="h-1.5 w-1.5 bg-green-400 rounded-full animate-pulse" />
+								<div className="h-2 w-2 bg-green-500 rounded-full animate-pulse" />
 								<span>Live Analysis</span>
 							</div>
 							<div className="flex items-center gap-2">
-								<BookOpen className="h-3 w-3" />
+								<BookOpen className="h-4 w-4" />
 								<span>{allCaseStudies.length} Studies</span>
+							</div>
+							<div className="flex items-center gap-2">
+								<Users className="h-4 w-4" />
+								<span>4 AI Agents</span>
 							</div>
 						</div>
 					</div>
 				</div>
 			</div>
 
-			<div className="max-w-6xl mx-auto px-6 pb-24">
-				{/* Minimal Search */}
+			<div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-24">
+				{/* Search and Filters */}
 				<div className="mb-16 -mt-8">
-					<Card className="bg-zinc-900/50 backdrop-blur-xl border-zinc-800/50">
+					<Card className="bg-card/50 backdrop-blur-sm border-border/50 shadow-lg">
 						<CardContent className="p-6">
-							<div className="flex flex-col lg:flex-row gap-4">
+							<div className="flex flex-col space-y-4 lg:flex-row lg:space-y-0 lg:space-x-4">
+								{/* Search Input */}
 								<div className="flex-1 relative">
-									<Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
-									<Input placeholder="Search conversations..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-12 h-12 bg-zinc-800/50 border-zinc-700/50 text-white placeholder:text-zinc-500 focus:border-blue-500/50 focus:ring-blue-500/20" />
+									<Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+									<Input placeholder="Search conversations, topics, or insights..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-12 h-11 bg-background/50 border-border focus:border-primary/50 focus:ring-primary/20" />
 								</div>
+
+								{/* Filters */}
 								<div className="flex gap-3">
 									<Select value={selectedTopic} onValueChange={setSelectedTopic}>
-										<SelectTrigger className="w-40 h-12 bg-zinc-800/50 border-zinc-700/50 text-white">
-											<SelectValue placeholder="Topic" />
+										<SelectTrigger className="w-full sm:w-40 h-11 bg-background/50 border-border">
+											<SelectValue placeholder="All Topics" />
 										</SelectTrigger>
-										<SelectContent className="bg-zinc-900 border-zinc-800">
+										<SelectContent>
 											<SelectItem value="all">All Topics</SelectItem>
 											{allTopics.map((topic) => (
 												<SelectItem key={topic} value={topic.toLowerCase()}>
@@ -111,14 +124,15 @@ export function ChatBlogGrid() {
 											))}
 										</SelectContent>
 									</Select>
+
 									<Select value={selectedDifficulty} onValueChange={setSelectedDifficulty}>
-										<SelectTrigger className="w-32 h-12 bg-zinc-800/50 border-zinc-700/50 text-white">
-											<SelectValue placeholder="Level" />
+										<SelectTrigger className="w-full sm:w-32 h-11 bg-background/50 border-border">
+											<SelectValue placeholder="All Levels" />
 										</SelectTrigger>
-										<SelectContent className="bg-zinc-900 border-zinc-800">
-											<SelectItem value="all">All</SelectItem>
+										<SelectContent>
+											<SelectItem value="all">All Levels</SelectItem>
 											{allDifficulties.map((difficulty) => (
-												<SelectItem key={difficulty} value={difficulty}>
+												<SelectItem key={difficulty} value={difficulty} className="capitalize">
 													{difficulty}
 												</SelectItem>
 											))}
@@ -127,10 +141,11 @@ export function ChatBlogGrid() {
 								</div>
 							</div>
 
+							{/* Search Results Info */}
 							{searchTerm && (
-								<div className="mt-4 pt-4 border-t border-zinc-800">
-									<p className="text-sm text-zinc-500">
-										{filteredCaseStudies.length} results for <span className="text-white">&ldquo;{searchTerm}&rdquo;</span>
+								<div className="mt-4 pt-4 border-t border-border">
+									<p className="text-sm text-muted-foreground">
+										{filteredCaseStudies.length} result{filteredCaseStudies.length !== 1 ? "s" : ""} for <span className="font-medium text-foreground">&ldquo;{searchTerm}&rdquo;</span>
 									</p>
 								</div>
 							)}
@@ -138,42 +153,63 @@ export function ChatBlogGrid() {
 					</Card>
 				</div>
 
-				{/* Minimal Grid */}
-				<div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+				{/* Case Studies Grid */}
+				<div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
 					{filteredCaseStudies.map((caseStudy) => (
 						<Link key={caseStudy.id} href={`/blog/${caseStudy.slug}`} className="group">
-							<Card className="h-full bg-zinc-900/30 border-zinc-800/50 hover:border-zinc-700/50 transition-all duration-500 hover:bg-zinc-900/50">
-								<CardContent className="p-8">
+							<Card className="h-full bg-card hover:bg-card/80 border-border hover:border-primary/20 transition-all duration-300 hover:shadow-lg hover:shadow-primary/5">
+								<CardContent className="p-6 lg:p-8">
 									{/* Header */}
 									<div className="flex items-start justify-between mb-6">
 										<div className="flex items-center gap-3">
-											<Badge className={`${getDifficultyColor(caseStudy.difficulty)} text-xs font-medium`}>{caseStudy.difficulty}</Badge>
-											<span className="text-xs text-zinc-500">{caseStudy.readTime}m</span>
+											<Badge className={`${getDifficultyColor(caseStudy.difficulty)} text-xs font-medium px-2.5 py-1`}>{caseStudy.difficulty}</Badge>
+											<div className="flex items-center gap-1 text-xs text-muted-foreground">
+												<Clock className="h-3 w-3" />
+												<span>{caseStudy.readTime}m read</span>
+											</div>
 										</div>
-										<span className="text-xs text-zinc-600">{formatDate(caseStudy.publishedAt)}</span>
+										<span className="text-xs text-muted-foreground">{formatDate(caseStudy.publishedAt)}</span>
 									</div>
 
 									{/* Title */}
-									<h3 className="text-xl font-semibold text-white mb-3 group-hover:text-blue-400 transition-colors">{caseStudy.title}</h3>
+									<h3 className="text-xl lg:text-2xl font-semibold text-foreground mb-4 group-hover:text-primary transition-colors leading-tight">{caseStudy.title}</h3>
 
 									{/* Summary */}
-									<p className="text-zinc-400 text-sm leading-relaxed mb-6 line-clamp-2">{caseStudy.summary}</p>
+									<p className="text-muted-foreground text-sm lg:text-base leading-relaxed mb-6 line-clamp-3">{caseStudy.summary}</p>
 
-									{/* Minimal Avatar Stack */}
+									{/* Topics */}
+									<div className="flex flex-wrap gap-2 mb-6">
+										{caseStudy.topics.slice(0, 3).map((topic) => (
+											<Badge key={topic} variant="secondary" className="text-xs bg-muted/50 text-muted-foreground hover:bg-muted">
+												{topic}
+											</Badge>
+										))}
+										{caseStudy.topics.length > 3 && (
+											<Badge variant="secondary" className="text-xs bg-muted/50 text-muted-foreground">
+												+{caseStudy.topics.length - 3} more
+											</Badge>
+										)}
+									</div>
+
+									{/* Footer */}
 									<div className="flex items-center justify-between">
+										{/* Avatar Stack */}
 										<div className="flex items-center gap-3">
 											<div className="flex -space-x-2">
 												{caseStudy.participants.slice(0, 4).map((participant, index) => (
-													<Avatar key={participant.id} className="h-7 w-7 border-2 border-zinc-900 ring-1 ring-zinc-700" style={{ zIndex: 4 - index }}>
+													<Avatar key={participant.id} className="h-8 w-8 border-2 border-background ring-1 ring-border" style={{ zIndex: 4 - index }}>
 														<AvatarImage src={participant.avatar} alt={participant.name} />
 														<AvatarFallback className="text-xs bg-gradient-to-br from-blue-500 to-purple-600 text-white font-medium">{participant.name.charAt(0)}</AvatarFallback>
 													</Avatar>
 												))}
 											</div>
-											<span className="text-xs text-zinc-500">{caseStudy.participants.length}</span>
+											<span className="text-xs text-muted-foreground">
+												{caseStudy.participants.length} agent{caseStudy.participants.length !== 1 ? "s" : ""}
+											</span>
 										</div>
 
-										<ArrowRight className="h-4 w-4 text-zinc-600 group-hover:text-blue-400 group-hover:translate-x-1 transition-all" />
+										{/* Arrow */}
+										<ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
 									</div>
 								</CardContent>
 							</Card>
@@ -185,11 +221,11 @@ export function ChatBlogGrid() {
 				{filteredCaseStudies.length === 0 && (
 					<div className="text-center py-24">
 						<div className="max-w-md mx-auto">
-							<div className="p-6 bg-zinc-900/30 rounded-2xl w-fit mx-auto mb-6">
-								<Search className="h-8 w-8 text-zinc-600" />
+							<div className="p-6 bg-muted/20 rounded-2xl w-fit mx-auto mb-6">
+								<Search className="h-12 w-12 text-muted-foreground" />
 							</div>
-							<h3 className="text-lg font-semibold text-white mb-2">No conversations found</h3>
-							<p className="text-zinc-500 mb-8">Try adjusting your search or filters</p>
+							<h3 className="text-xl font-semibold text-foreground mb-2">No conversations found</h3>
+							<p className="text-muted-foreground mb-8">Try adjusting your search terms or filters to discover more AI conversations.</p>
 							<Button
 								variant="outline"
 								onClick={() => {
@@ -197,9 +233,9 @@ export function ChatBlogGrid() {
 									setSelectedTopic("all");
 									setSelectedDifficulty("all");
 								}}
-								className="bg-zinc-900/50 border-zinc-800 text-white hover:bg-zinc-800"
+								className="bg-background hover:bg-muted"
 							>
-								Reset Filters
+								Clear all filters
 							</Button>
 						</div>
 					</div>

@@ -117,24 +117,24 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
 			<script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
 			{/* Navigation Header */}
-			<div className="sticky top-0 z-50 bg-black/80 backdrop-blur-xl border-b border-zinc-800/50">
-				<div className="max-w-4xl mx-auto px-6 py-4">
+			<div className="sticky top-0 z-50 bg-background/80 backdrop-blur-xl border-b border-border/50 shadow-sm">
+				<div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
 					<div className="flex items-center justify-between">
-						<div className="flex items-center gap-4">
+						<div className="flex items-center gap-3">
 							<Link href="/blog">
-								<Button variant="outline" size="sm" className="gap-2 bg-zinc-900/50 border-zinc-800 text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors">
+								<Button variant="outline" size="sm" className="gap-2 bg-background/50 border-border text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
 									<ArrowLeft className="h-4 w-4" />
-									<span className="hidden sm:inline">Back</span>
+									<span className="hidden sm:inline">Back to Blog</span>
 								</Button>
 							</Link>
 							<Link href="/">
-								<Button variant="ghost" size="sm" className="gap-2 text-zinc-500 hover:text-white transition-colors">
+								<Button variant="ghost" size="sm" className="gap-2 text-muted-foreground hover:text-foreground transition-colors">
 									<Home className="h-4 w-4" />
 									<span className="hidden sm:inline">Live Chat</span>
 								</Button>
 							</Link>
 						</div>
-						<div className="text-sm text-zinc-500 hidden md:block">{caseStudy.readTime}m read</div>
+						<div className="text-sm text-muted-foreground hidden md:block">{caseStudy.readTime}m read</div>
 					</div>
 				</div>
 			</div>
