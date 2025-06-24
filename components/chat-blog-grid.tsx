@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { getAllCaseStudies } from "@/lib/chat-data";
 import { BookOpen, Search, ArrowRight, Zap, Clock, Users } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export function ChatBlogGrid() {
 	const allCaseStudies = getAllCaseStudies();
@@ -62,6 +63,11 @@ export function ChatBlogGrid() {
 				<div className="absolute inset-0 bg-gradient-to-br from-blue-50/50 via-background to-purple-50/50 dark:from-blue-950/10 dark:via-background dark:to-purple-950/10" />
 
 				<div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-16 pb-20 sm:pt-24 sm:pb-28">
+					{/* Theme Toggle */}
+					<div className="absolute top-6 right-6">
+						<ThemeToggle />
+					</div>
+
 					<div className="text-center">
 						{/* Badge */}
 						<div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20 mb-8">

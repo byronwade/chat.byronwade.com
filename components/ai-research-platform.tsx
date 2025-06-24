@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { BookOpen, MessageSquare } from "lucide-react";
 import { MultiAgentDebate } from "./multi-agent-debate";
+import { ThemeToggle } from "./theme-toggle";
 
 interface AIAgent {
 	id: string;
@@ -258,6 +259,7 @@ export function AIResearchPlatform() {
 								</Link>
 							</nav>
 						</div>
+						<ThemeToggle />
 					</div>
 				</div>
 			</div>

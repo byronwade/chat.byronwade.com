@@ -5,6 +5,7 @@ import { getCaseStudyBySlug, getAllCaseStudies } from "@/lib/chat-data";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Home } from "lucide-react";
 import Link from "next/link";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 interface BlogPostPageProps {
 	params: Promise<{ slug: string }>;
@@ -134,7 +135,10 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
 								</Button>
 							</Link>
 						</div>
-						<div className="text-sm text-muted-foreground hidden md:block">{caseStudy.readTime}m read</div>
+						<div className="flex items-center gap-4">
+							<div className="text-sm text-muted-foreground hidden md:block">{caseStudy.readTime}m read</div>
+							<ThemeToggle />
+						</div>
 					</div>
 				</div>
 			</div>
