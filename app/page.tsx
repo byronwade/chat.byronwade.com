@@ -1,5 +1,5 @@
-import { AIResearchPlatform } from "@/components/ai-research-platform";
+import { HomePage } from "@/components/home-page";
 
 export default function Home() {
-	return <AIResearchPlatform />;
+	return <HomePage />;
 }

@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Sidebar, SidebarContent, SidebarHeader, SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { MessageCircle, Volume2, Box, Send, Users, Brain, Video, Image, Clock, EyeOff, Mic, MicOff, VideoOff, ImageOff, FileText, Code, ArrowRight, ChevronDown, ChevronUp, Headphones, Maximize2, Settings, Sun, Moon, Smile, Paperclip, Calculator, Zap, Camera, Music, Globe, Hash, Sparkles, Bot, Lightbulb, BarChart3, File, X, Search } from "lucide-react";
+import { MessageCircle, Volume2, Box, Send, Users, Brain, Video, Image as ImageIcon, Clock, EyeOff, Mic, MicOff, VideoOff, ImageOff, FileText, Code, ArrowRight, ChevronDown, ChevronUp, Headphones, Maximize2, Settings, Sun, Moon, Smile, Paperclip, Calculator, Zap, Camera, Music, Globe, Hash, Sparkles, Bot, Lightbulb, BarChart3, File, X, Search, House } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -26,6 +27,14 @@ interface Message {
 	confidence?: number;
 	emotion?: string;
 	thinking?: string[];
+
+	// Smart Threading System
+	replyToId?: string; // ID of message this is replying to
+	threadId?: string; // Groups related messages together
+	isMainPoint?: boolean; // Major debate points vs responses
+	replyCount?: number; // How many replies this message has
+	threadDepth?: number; // Visual indentation depth for threading
+
 	generatedContent?: {
 		type: "image" | "video" | "code" | "data";
 		url?: string;
@@ -107,6 +116,27 @@ interface AIAgent {
 	emotion?: string;
 }
 
+interface DebateRules {
+	maxMessageLength: number;
+	cooldownBetweenMessages: number; // seconds
+	topicChangeVoteThreshold: number; // percentage needed to change topic
+	moderatorOverride: boolean;
+	allowedMessageTypes: string[];
+	bannedWords: string[];
+	requiresEvidence: boolean;
+	timeLimit?: number; // minutes per debate session
+}
+
+interface TopicChangeProposal {
+	id: string;
+	proposedBy: string;
+	proposedTopic: string;
+	currentVotes: number;
+	totalVoters: number;
+	timeRemaining: number; // seconds
+	active: boolean;
+}
+
 interface Debate {
 	id: string;
 	title: string;
@@ -120,6 +150,32 @@ interface Debate {
 	peakViewers?: number;
 	streamDuration?: number;
 	isLive?: boolean;
+	rules: DebateRules;
+	topicChangeProposal?: TopicChangeProposal;
+}
+
+interface ActiveUser {
+	id: string;
+	name: string;
+	avatar?: string;
+	joinedAt: Date;
+	isActive: boolean;
+	isSpeaking: boolean;
+	hasCamera: boolean;
+	hasMicrophone: boolean;
+	isHandRaised: boolean;
+	lastActivity: Date;
+	role?: "moderator" | "participant" | "viewer";
+	badges?: string[];
+}
+
+interface AIInteractionQueue {
+	userId: string;
+	userName: string;
+	message: string;
+	timestamp: Date;
+	priority: number;
+	aiAgentId?: string;
 }
 
 interface MultiAgentDebateProps {
@@ -545,6 +601,103 @@ export function MultiAgentDebate({ debate, agents }: MultiAgentDebateProps) {
 				relatedTopics: ["AI ethics", "global governance", "technology policy", "digital rights"],
 			},
 		},
+		{
+			id: "user-7",
+			senderId: "user-5",
+			senderType: "human",
+			senderName: "Emma Wilson",
+			content: "@Claude can you help me solve this math problem: 2x + 5 = 15?",
+			timestamp: new Date("2024-01-15T14:22:00Z"),
+			isMainPoint: false,
+		},
+		{
+			id: "user-8",
+			senderId: "claude",
+			senderType: "ai",
+			senderName: "Claude",
+			senderAvatar: "/claude-avatar-new.svg",
+			content: "Of course, @Emma Wilson! Let me solve that step by step:\n\n2x + 5 = 15\n2x = 15 - 5\n2x = 10\nx = 10 ÷ 2\nx = 5\n\nSo the answer is x = 5. You can verify this by substituting back: 2(5) + 5 = 10 + 5 = 15 ✓",
+			timestamp: new Date("2024-01-15T14:22:30Z"),
+			confidence: 0.98,
+			emotion: "helpful",
+			thinking: ["Breaking down the algebraic equation", "Solving step by step", "Verifying the solution"],
+			replyToId: "user-7",
+			threadId: "math-help",
+			isMainPoint: false,
+			mentions: {
+				agents: [],
+				users: ["Emma Wilson"],
+				files: [],
+				topics: ["mathematics", "algebra"],
+			},
+		},
+		{
+			id: "user-9",
+			senderId: "user-12",
+			senderType: "human",
+			senderName: "Tom Anderson",
+			content: "That's a great example of how AI can help with education! @GPT-4 what do you think about AI tutoring systems?",
+			timestamp: new Date("2024-01-15T14:24:00Z"),
+			replyToId: "user-8",
+			threadId: "education-debate",
+			isMainPoint: true, // This starts a new major debate point
+			replyCount: 3,
+		},
+		{
+			id: "user-10",
+			senderId: "gpt-4",
+			senderType: "ai",
+			senderName: "GPT-4",
+			senderAvatar: "/gpt-avatar-new.png",
+			content: "Excellent question, @Tom Anderson! AI tutoring systems have tremendous potential. They can provide personalized learning experiences, adapt to individual learning styles, and offer 24/7 availability. However, we must ensure they complement rather than replace human teachers, who bring emotional intelligence and contextual understanding that's crucial for effective education.",
+			timestamp: new Date("2024-01-15T14:24:45Z"),
+			confidence: 0.94,
+			emotion: "educational",
+			thinking: ["Considering benefits of AI tutoring", "Balancing AI capabilities with human teaching", "Emphasizing complementary roles"],
+			replyToId: "user-9",
+			threadId: "education-debate",
+			isMainPoint: false,
+			mentions: {
+				agents: [],
+				users: ["Tom Anderson"],
+				files: [],
+				topics: ["education", "tutoring", "personalization"],
+			},
+		},
+		{
+			id: "user-11",
+			senderId: "user-8",
+			senderType: "human",
+			senderName: "Maria Garcia",
+			content: "I'm concerned about AI bias in educational content. How do we ensure fair representation across different cultures and backgrounds?",
+			timestamp: new Date("2024-01-15T14:26:00Z"),
+			replyToId: "user-10",
+			threadId: "education-debate",
+			isMainPoint: true, // Another major point in the education debate
+			replyCount: 1,
+		},
+		{
+			id: "user-12",
+			senderId: "gemini",
+			senderType: "ai",
+			senderName: "Gemini",
+			senderAvatar: "/gemini-avatar-new.png",
+
+			content: "That's a crucial concern, @Maria Garcia. AI bias in educational content can perpetuate inequalities. We need diverse training data, inclusive development teams, and continuous auditing of AI systems. It's also important to involve educators and communities from different backgrounds in the design process to ensure cultural sensitivity and representation.",
+			timestamp: new Date("2024-01-15T14:26:45Z"),
+			confidence: 0.91,
+			emotion: "thoughtful",
+			thinking: ["Addressing bias concerns", "Considering cultural representation", "Emphasizing inclusive development"],
+			replyToId: "user-11",
+			threadId: "education-debate",
+			isMainPoint: false,
+			mentions: {
+				agents: [],
+				users: ["Maria Garcia"],
+				files: [],
+				topics: ["bias", "diversity", "education", "representation"],
+			},
+		},
 	]);
 	const [chatMessages, setChatMessages] = useState<Message[]>([
 		{
@@ -747,7 +900,7 @@ export function MultiAgentDebate({ debate, agents }: MultiAgentDebateProps) {
 	// Available AI Tools
 	const availableTools = [
 		{ id: "math", name: "Math Solver", icon: Calculator, description: "Solve complex equations and mathematical problems" },
-		{ id: "image", name: "Image Generator", icon: Image, description: "Generate images from text descriptions" },
+		{ id: "image", name: "Image Generator", icon: ImageIcon, description: "Generate images from text descriptions" },
 		{ id: "video", name: "Video Creator", icon: Video, description: "Create short videos and animations" },
 		{ id: "meme", name: "Meme Generator", icon: Smile, description: "Create funny memes and captions" },
 		{ id: "code", name: "Code Assistant", icon: Code, description: "Generate and debug code" },
@@ -761,7 +914,7 @@ export function MultiAgentDebate({ debate, agents }: MultiAgentDebateProps) {
 	// Slash Commands
 	const slashCommands = [
 		{ command: "/math", description: "Solve mathematical equations", icon: Calculator },
-		{ command: "/image", description: "Generate an image", icon: Image },
+		{ command: "/image", description: "Generate an image", icon: ImageIcon },
 		{ command: "/video", description: "Create a video", icon: Video },
 		{ command: "/meme", description: "Generate a meme", icon: Smile },
 		{ command: "/code", description: "Generate code", icon: Code },
@@ -786,10 +939,161 @@ export function MultiAgentDebate({ debate, agents }: MultiAgentDebateProps) {
 	];
 
 	// Add paywall state for viewers
-	const [isViewerPaid, setIsViewerPaid] = useState(false);
-	const [showPaywall, setShowPaywall] = useState(false);
+
+	// User management
+	const [activeUsers] = useState<ActiveUser[]>(() => [
+		// Current user
+		{
+			id: "current-user",
+			name: "Jordan Mitchell",
+			joinedAt: new Date(1704067200000 - 1000 * 60 * 5), // Fixed timestamp
+			isActive: true,
+			isSpeaking: false,
+			hasCamera: true,
+			hasMicrophone: true,
+			isHandRaised: false,
+			lastActivity: new Date(1704067200000), // Fixed timestamp
+			role: "participant",
+			badges: ["Verified"],
+		},
+		// Moderators
+		{
+			id: "mod-1",
+			name: "Byron Wade",
+			joinedAt: new Date(1704067200000 - 1000 * 60 * 45), // Fixed timestamp
+			isActive: true,
+			isSpeaking: false,
+			hasCamera: true,
+			hasMicrophone: true,
+			isHandRaised: false,
+			lastActivity: new Date(1704067200000 - 1000 * 30), // Fixed timestamp
+			role: "moderator",
+			badges: ["Host", "Founder"],
+		},
+		{
+			id: "mod-2",
+			name: "Dr. Sarah Chen",
+			joinedAt: new Date(1704067200000 - 1000 * 60 * 40), // Fixed timestamp
+			isActive: true,
+			isSpeaking: false,
+			hasCamera: true,
+			hasMicrophone: true,
+			isHandRaised: false,
+			lastActivity: new Date(1704067200000 - 1000 * 60), // Fixed timestamp
+			role: "moderator",
+			badges: ["AI Expert", "Moderator"],
+		},
+		{
+			id: "mod-3",
+			name: "Alex Rivera",
+			joinedAt: new Date(1704067200000 - 1000 * 60 * 35), // Fixed timestamp
+			isActive: true,
+			isSpeaking: false,
+			hasCamera: true,
+			hasMicrophone: true,
+			isHandRaised: false,
+			lastActivity: new Date(1704067200000 - 1000 * 45), // Fixed timestamp
+			role: "moderator",
+			badges: ["Community Manager"],
+		},
+		// Regular participants and viewers
+		...Array.from({ length: 124 }, (_, i) => {
+			// Use deterministic values based on index to prevent hydration mismatch
+			const seed = i + 1;
+			const pseudoRandom1 = ((seed * 9301 + 49297) % 233280) / 233280;
+			const pseudoRandom2 = (((seed + 1) * 9301 + 49297) % 233280) / 233280;
+			const pseudoRandom3 = (((seed + 2) * 9301 + 49297) % 233280) / 233280;
+			const pseudoRandom4 = (((seed + 3) * 9301 + 49297) % 233280) / 233280;
+			const pseudoRandom5 = (((seed + 4) * 9301 + 49297) % 233280) / 233280;
+			const pseudoRandom6 = (((seed + 5) * 9301 + 49297) % 233280) / 233280;
+			const pseudoRandom7 = (((seed + 6) * 9301 + 49297) % 233280) / 233280;
+			const pseudoRandom8 = (((seed + 7) * 9301 + 49297) % 233280) / 233280;
+
+			return {
+				id: `user-${seed}`,
+				name: ["Alex Chen", "Sarah Johnson", "Mike Rodriguez", "Emma Wilson", "David Kim", "Lisa Zhang", "James Brown", "Maria Garcia", "Ryan Lee", "Jessica Wang", "Tom Anderson", "Anna Patel", "Chris Taylor", "Sophie Martin", "Lucas Silva", "Maya Gupta", "Jake Thompson", "Zoe Davis", "Noah Williams", "Ava Jones"][i % 20] + (i >= 20 ? ` ${Math.floor(i / 20) + 1}` : ""),
+				joinedAt: new Date(1704067200000 - pseudoRandom1 * 1000 * 60 * 30), // Fixed base timestamp
+				isActive: pseudoRandom2 > 0.3,
+				isSpeaking: pseudoRandom3 > 0.95,
+				hasCamera: pseudoRandom4 > 0.4,
+				hasMicrophone: pseudoRandom5 > 0.2,
+				isHandRaised: pseudoRandom6 > 0.9,
+				lastActivity: new Date(1704067200000 - pseudoRandom7 * 1000 * 60 * 10), // Fixed base timestamp
+				role: (pseudoRandom8 > 0.8 ? "participant" : "viewer") as "participant" | "viewer",
+				badges: pseudoRandom1 > 0.7 ? [["Verified", "Premium", "Supporter", "Regular"][Math.floor(pseudoRandom2 * 4)]] : undefined,
+			};
+		}),
+	]);
+
+	const [aiInteractionQueue, setAiInteractionQueue] = useState<AIInteractionQueue[]>([]);
+	const [currentUserInteracting, setCurrentUserInteracting] = useState<string | null>(null);
+	const [aiCooldownTimer, setAiCooldownTimer] = useState<number>(0);
 	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	const [currentUserType, setCurrentUserType] = useState<"viewer" | "participant">("viewer");
+
+	// Debate rules and moderation
+	const [userCooldowns, setUserCooldowns] = useState<Record<string, number>>({});
+	const [topicChangeProposal, setTopicChangeProposal] = useState<TopicChangeProposal | null>(null);
+	const [hasVotedForTopicChange, setHasVotedForTopicChange] = useState(false);
+	const [showRulesModal, setShowRulesModal] = useState(false);
+
+	// Smart Threading System - Simplified
+	const [viewMode, setViewMode] = useState<"threaded" | "chronological">("threaded");
+
+	// Enhanced message organization with proper threading
+	const organizeMessages = (messages: Message[]) => {
+		if (viewMode === "chronological") {
+			// Simple chronological order - all messages by timestamp
+			return messages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+		}
+
+		// Threaded mode - group by conversation threads
+		const sorted = messages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+		const threaded: Message[] = [];
+		const messageMap = new Map<string, Message>();
+
+		// Create a map for quick lookup
+		sorted.forEach((msg) => messageMap.set(msg.id, msg));
+
+		// Find root messages (no replyToId) and their threads
+		const processedIds = new Set<string>();
+
+		sorted.forEach((message) => {
+			if (processedIds.has(message.id)) return;
+
+			if (!message.replyToId) {
+				// This is a root message - add it and its thread
+				threaded.push(message);
+				processedIds.add(message.id);
+
+				// Find and add all replies to this message
+				const addReplies = (parentId: string, depth = 0) => {
+					const replies = sorted.filter((msg) => msg.replyToId === parentId && !processedIds.has(msg.id));
+
+					replies.forEach((reply) => {
+						// Add visual threading depth
+						reply.threadDepth = depth + 1;
+						threaded.push(reply);
+						processedIds.add(reply.id);
+
+						// Recursively add replies to this reply
+						addReplies(reply.id, depth + 1);
+					});
+				};
+
+				addReplies(message.id);
+			}
+		});
+
+		// Add any remaining messages that weren't threaded
+		sorted.forEach((message) => {
+			if (!processedIds.has(message.id)) {
+				threaded.push(message);
+			}
+		});
+
+		return threaded;
+	};
 
 	// File upload state
 	const [uploadedFiles, setUploadedFiles] = useState<
@@ -900,14 +1204,75 @@ export function MultiAgentDebate({ debate, agents }: MultiAgentDebateProps) {
 		}
 	};
 
+	// Debate rules enforcement
+	const enforceDebateRules = (message: string, userId: string): { allowed: boolean; reason?: string } => {
+		const rules = debate.rules;
+
+		// Check message length
+		if (message.length > rules.maxMessageLength) {
+			return { allowed: false, reason: `Message too long (max ${rules.maxMessageLength} characters)` };
+		}
+
+		// Check cooldown
+		const lastMessageTime = userCooldowns[userId] || 0;
+		const timeSinceLastMessage = (Date.now() - lastMessageTime) / 1000;
+		if (timeSinceLastMessage < rules.cooldownBetweenMessages) {
+			const remainingTime = Math.ceil(rules.cooldownBetweenMessages - timeSinceLastMessage);
+			return { allowed: false, reason: `Please wait ${remainingTime}s before posting again` };
+		}
+
+		// Check banned words
+		const messageWords = message.toLowerCase().split(/\s+/);
+		const foundBannedWord = rules.bannedWords.find((word) => messageWords.some((msgWord) => msgWord.includes(word.toLowerCase())));
+		if (foundBannedWord) {
+			return { allowed: false, reason: `Message contains inappropriate content` };
+		}
+
+		return { allowed: true };
+	};
+
+	const voteForTopicChange = (support: boolean) => {
+		if (!topicChangeProposal || hasVotedForTopicChange) return;
+
+		setTopicChangeProposal((prev) => {
+			if (!prev) return prev;
+			const newVotes = support ? prev.currentVotes + 1 : prev.currentVotes;
+			const votePercentage = (newVotes / prev.totalVoters) * 100;
+
+			// Check if threshold is met
+			if (votePercentage >= debate.rules.topicChangeVoteThreshold) {
+				// Topic change approved - would trigger topic change in real implementation
+				return { ...prev, active: false };
+			}
+
+			return { ...prev, currentVotes: newVotes };
+		});
+
+		setHasVotedForTopicChange(true);
+	};
+
 	const handleSendMessage = () => {
 		if (!inputValue.trim() || isLoading) return;
+
+		// Get current user info from activeUsers
+		const currentUser = activeUsers.find((u) => u.id === "current-user");
+		const userName = currentUser?.name || "You";
+
+		// Enforce debate rules
+		const ruleCheck = enforceDebateRules(inputValue, "current-user");
+		if (!ruleCheck.allowed) {
+			alert(ruleCheck.reason); // In real app, would use toast notification
+			return;
+		}
+
+		// Update user cooldown
+		setUserCooldowns((prev) => ({ ...prev, "current-user": Date.now() }));
 
 		const newMessage: Message = {
 			id: Date.now().toString(),
 			senderId: "current-user",
 			senderType: "human",
-			senderName: "You",
+			senderName: userName,
 			content: inputValue,
 			timestamp: new Date(),
 			confidence: 0.95,
@@ -1145,16 +1510,71 @@ export function MultiAgentDebate({ debate, agents }: MultiAgentDebateProps) {
 	const handleSendChatMessage = () => {
 		if (!chatInputValue.trim()) return;
 
+		const currentUser = activeUsers.find((u) => u.id === "current-user");
+		const userName = currentUser?.name || "You";
+
+		// Check if message is directed at AI (starts with @AI or @agent)
+		const isAIDirected = chatInputValue.toLowerCase().startsWith("@ai") || chatInputValue.toLowerCase().startsWith("@claude") || chatInputValue.toLowerCase().startsWith("@gpt") || chatInputValue.toLowerCase().startsWith("@gemini") || chatInputValue.toLowerCase().startsWith("@mistral");
+
 		const newChatMessage: Message = {
 			id: `chat-${Date.now()}`,
 			senderId: "current-user",
 			senderType: "human",
-			senderName: "You",
+			senderName: userName,
 			content: chatInputValue,
 			timestamp: new Date(),
 		};
 
 		setChatMessages((prev) => [...prev, newChatMessage]);
+
+		// Handle AI interaction queue
+		if (isAIDirected && aiCooldownTimer === 0) {
+			const aiRequest: AIInteractionQueue = {
+				userId: "current-user",
+				userName: userName,
+				message: chatInputValue,
+				timestamp: new Date(),
+				priority: 1,
+			};
+
+			setAiInteractionQueue((prev) => [...prev, aiRequest]);
+
+			// Start AI cooldown (30 seconds)
+			setAiCooldownTimer(30);
+			const cooldownInterval = setInterval(() => {
+				setAiCooldownTimer((prev) => {
+					if (prev <= 1) {
+						clearInterval(cooldownInterval);
+						return 0;
+					}
+					return prev - 1;
+				});
+			}, 1000);
+
+			// Simulate AI response after 3-5 seconds
+			setTimeout(() => {
+				const aiAgent = agents[Math.floor(Math.random() * agents.length)];
+				setCurrentUserInteracting(aiAgent.id);
+
+				setTimeout(() => {
+					const aiResponse: Message = {
+						id: `ai-response-${Date.now()}`,
+						senderId: aiAgent.id,
+						senderType: "ai",
+						content: `@${userName} ${generateAIResponse(chatInputValue, "chat", null)}`,
+						timestamp: new Date(),
+						senderName: aiAgent.name,
+						senderAvatar: aiAgent.avatar,
+						confidence: Math.random() * 0.3 + 0.7,
+					};
+
+					setChatMessages((prev) => [...prev, aiResponse]);
+					setCurrentUserInteracting(null);
+					setAiInteractionQueue((prev) => prev.filter((q) => q.userId !== "current-user"));
+				}, 2000);
+			}, Math.random() * 2000 + 3000);
+		}
+
 		setChatInputValue("");
 	};
 
@@ -1208,7 +1628,7 @@ export function MultiAgentDebate({ debate, agents }: MultiAgentDebateProps) {
 					topics: ["mathematics", "algebra", "linear-equations"],
 				},
 			},
-			// AI response with math solution and sources
+			// AI response with math solution and sources (reply to demo-1)
 			{
 				id: "demo-2",
 				senderId: "claude-ai",
@@ -1219,6 +1639,7 @@ export function MultiAgentDebate({ debate, agents }: MultiAgentDebateProps) {
 				timestamp: new Date(Date.now() - 280000),
 				confidence: 0.96,
 				emotion: "helpful",
+				replyToId: "demo-1", // This is a reply to the user's math question
 				thinking: ["Understanding the user's request and context", "Identifying the appropriate tools and methods to use", "Processing the input with specialized algorithms", "Applying mathematical principles and formulas", "Verifying the solution through multiple methods"],
 				aiLogs: [
 					{
@@ -1325,7 +1746,7 @@ export function MultiAgentDebate({ debate, agents }: MultiAgentDebateProps) {
 					relatedTopics: ["machine learning", "deep learning", "automation"],
 				},
 			},
-			// AI response with comprehensive research and sources
+			// AI response with comprehensive research and sources (reply to demo-3)
 			{
 				id: "demo-4",
 				senderId: "research-ai",
@@ -1336,6 +1757,7 @@ export function MultiAgentDebate({ debate, agents }: MultiAgentDebateProps) {
 				timestamp: new Date(Date.now() - 220000),
 				confidence: 0.94,
 				emotion: "analytical",
+				replyToId: "demo-3", // This is a reply to the research request
 				thinking: ["Understanding the user's request and context", "Searching for relevant videos and documents", "Analyzing the uploaded research report", "Cross-referencing multiple sources", "Compiling comprehensive findings"],
 				aiLogs: [
 					{
@@ -2065,6 +2487,27 @@ export function MultiAgentDebate({ debate, agents }: MultiAgentDebateProps) {
 					topics: ["CodingTikTok", "DebuggingLife", "TechHumor"],
 				},
 			},
+			// Follow-up message that creates a deeper thread (reply to demo-2)
+			{
+				id: "demo-17",
+				senderId: "current-user",
+				senderType: "human",
+				senderName: "You",
+				content: "Thanks @Claude! That's exactly what I needed. Can you also show me how to solve a similar equation like 3x - 7 = 14?",
+				timestamp: new Date(Date.now() - 1000),
+				confidence: 0.95,
+				emotion: "grateful",
+				thinking: [],
+				aiLogs: [],
+				generatedContent: null,
+				replyToId: "demo-2", // This is a reply to Claude's math solution
+				mentions: {
+					agents: ["Claude"],
+					users: [],
+					files: [],
+					topics: ["mathematics", "algebra"],
+				},
+			},
 		];
 
 		setMessages(demoMessages);
@@ -2074,51 +2517,232 @@ export function MultiAgentDebate({ debate, agents }: MultiAgentDebateProps) {
 		<TooltipProvider>
 			<SidebarProvider defaultOpen={true}>
 				<div className="flex h-screen w-full bg-background text-foreground overflow-hidden">
-					{/* Left Sidebar */}
+					{/* Left Sidebar - User Gallery */}
 					{leftSidebarOpen && (
 						<Sidebar side="left" collapsible="offcanvas" className="border-r border-border/50 bg-card/50 backdrop-blur-sm">
-							<SidebarHeader className="border-b border-border/50 p-4 bg-card/80">
-								<div className="flex items-center gap-2">
-									<div className="p-1.5 bg-primary/10 rounded-lg">
-										<Users className="h-4 w-4 text-primary" />
+							<SidebarHeader className="border-b border-border/50 p-3 bg-card/80">
+								<div className="flex items-center justify-between">
+									<div className="flex items-center gap-2">
+										<div className="p-1.5 bg-primary/10 rounded-lg">
+											<Users className="h-4 w-4 text-primary" />
+										</div>
+										<h2 className="font-semibold text-foreground text-sm">Participants</h2>
 									</div>
-									<h2 className="font-semibold text-foreground">AI Agents</h2>
+									<Badge variant="outline" className="text-xs bg-green-500/10 text-green-600 border-green-500/30">
+										{activeUsers.length} online
+									</Badge>
 								</div>
+
+								{/* AI Queue Status */}
+								{aiInteractionQueue.length > 0 && (
+									<div className="mt-2 p-2 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+										<div className="flex items-center gap-2 text-xs">
+											<div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+											<span className="text-blue-600 font-medium">{aiInteractionQueue.length} in AI queue</span>
+										</div>
+									</div>
+								)}
+
+								{/* AI Cooldown Timer */}
+								{aiCooldownTimer > 0 && (
+									<div className="mt-2 p-2 bg-orange-500/10 border border-orange-500/20 rounded-lg">
+										<div className="flex items-center gap-2 text-xs">
+											<Clock className="h-3 w-3 text-orange-600" />
+											<span className="text-orange-600 font-medium">AI cooldown: {aiCooldownTimer}s</span>
+										</div>
+									</div>
+								)}
 							</SidebarHeader>
-							<SidebarContent>
-								<div className="p-4 space-y-3">
-									{agents.map((agent) => (
-										<Tooltip key={agent.id}>
-											<TooltipTrigger asChild>
-												<div className="flex items-center gap-3 p-3 bg-muted/30 hover:bg-muted/50 rounded-lg cursor-pointer transition-all duration-200 border border-transparent hover:border-border/50">
-													<Avatar className="h-8 w-8 ring-2 ring-background">
-														<AvatarImage src={agent.avatar} alt={agent.name} />
-														<AvatarFallback className="bg-primary/10 text-primary font-medium text-xs">{agent.name.charAt(0)}</AvatarFallback>
-													</Avatar>
-													<div className="flex-1 min-w-0">
-														<p className="text-sm font-medium text-foreground truncate">{agent.name}</p>
-														<p className="text-xs text-muted-foreground truncate">{agent.model}</p>
-													</div>
-													{agent.isOnline && <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse ring-2 ring-green-500/20"></div>}
+
+							<SidebarContent className="p-0 overflow-hidden">
+								{/* Compact Header */}
+								<div className="p-3 border-b border-border/30 bg-muted/30">
+									<div className="flex items-center justify-between text-xs">
+										<span className="text-muted-foreground">Online</span>
+										<span className="font-medium">{activeUsers.length + agents.length}</span>
+									</div>
+								</div>
+
+								{/* Organized User Sections - Single Scroll Container */}
+								<div className="h-full overflow-y-auto">
+									{/* Moderators Section */}
+									{activeUsers.filter((user) => user.role === "moderator").length > 0 && (
+										<div className="p-2 pb-1">
+											<div className="flex items-center gap-1 mb-2">
+												<div className="w-1.5 h-1.5 bg-red-500 rounded-full"></div>
+												<span className="text-xs text-muted-foreground font-medium">Moderators</span>
+											</div>
+											<div className="grid grid-cols-5 gap-1.5">
+												{activeUsers
+													.filter((user) => user.role === "moderator")
+													.map((user) => (
+														<Tooltip key={user.id}>
+															<TooltipTrigger asChild>
+																<div className="relative aspect-square bg-red-500/10 border border-red-500/20 rounded-md overflow-hidden cursor-pointer transition-all duration-200 hover:border-red-500/40">
+																	<div className="w-full h-full flex items-center justify-center">
+																		<Avatar className="h-4 w-4">
+																			<AvatarFallback className="bg-red-500/20 text-red-600 text-xs font-bold">{user.name.charAt(0)}</AvatarFallback>
+																		</Avatar>
+																	</div>
+
+																	{/* Crown */}
+																	<div className="absolute top-0.5 left-0.5 w-2.5 h-2.5 bg-yellow-500 rounded-full flex items-center justify-center">
+																		<span className="text-xs leading-none">👑</span>
+																	</div>
+
+																	{/* Status Dots */}
+																	<div className="absolute bottom-0.5 right-0.5 flex gap-0.5">
+																		{user.hasMicrophone ? <div className="w-1.5 h-1.5 bg-white rounded-full"></div> : <div className="w-1.5 h-1.5 bg-red-400 rounded-full"></div>}
+																		{user.isSpeaking && <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>}
+																	</div>
+																</div>
+															</TooltipTrigger>
+															<TooltipContent side="right" className="bg-card border border-border/50 shadow-lg">
+																<div className="space-y-1">
+																	<div className="flex items-center gap-1">
+																		<span className="text-xs">👑</span>
+																		<div className="font-semibold text-foreground text-sm">{user.name}</div>
+																	</div>
+																	<div className="text-xs text-muted-foreground">Moderator</div>
+																</div>
+															</TooltipContent>
+														</Tooltip>
+													))}
+											</div>
+										</div>
+									)}
+
+									{/* AI Agents Section */}
+									{agents.length > 0 && (
+										<div className="p-2 pb-1">
+											<div className="flex items-center gap-1 mb-2">
+												<div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></div>
+												<span className="text-xs text-muted-foreground font-medium">AI Agents</span>
+											</div>
+											<div className="grid grid-cols-5 gap-1.5">
+												{agents.map((agent) => (
+													<Tooltip key={agent.id}>
+														<TooltipTrigger asChild>
+															<div className={`relative aspect-square bg-blue-500/10 border border-blue-500/20 rounded-md overflow-hidden cursor-pointer transition-all duration-200 hover:border-blue-500/40 ${currentUserInteracting === agent.id ? "ring-1 ring-blue-500/50" : ""}`}>
+																<div className="w-full h-full flex items-center justify-center">
+																	<Avatar className="h-4 w-4">
+																		<AvatarImage src={agent.avatar} alt={agent.name} />
+																		<AvatarFallback className="bg-blue-500/20 text-blue-600 text-xs font-bold">{agent.name.charAt(0)}</AvatarFallback>
+																	</Avatar>
+																</div>
+
+																{/* AI Badge */}
+																<div className="absolute top-0.5 left-0.5 w-2.5 h-2.5 bg-blue-500 rounded-full flex items-center justify-center">
+																	<span className="text-xs text-white font-bold leading-none">AI</span>
+																</div>
+
+																{/* Status */}
+																<div className="absolute bottom-0.5 right-0.5">{agent.isOnline && <div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>}</div>
+															</div>
+														</TooltipTrigger>
+														<TooltipContent side="right" className="bg-card border border-border/50 shadow-lg">
+															<div className="space-y-1">
+																<div className="flex items-center gap-1">
+																	<Badge variant="secondary" className="text-xs">
+																		AI
+																	</Badge>
+																	<div className="font-semibold text-foreground text-sm">{agent.name}</div>
+																</div>
+																<div className="text-xs text-muted-foreground">{agent.model}</div>
+															</div>
+														</TooltipContent>
+													</Tooltip>
+												))}
+											</div>
+										</div>
+									)}
+
+									{/* Participants Section */}
+									<div className="p-2">
+										<div className="flex items-center gap-1 mb-2">
+											<div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>
+											<span className="text-xs text-muted-foreground font-medium">Participants ({activeUsers.filter((u) => u.role !== "moderator").length})</span>
+										</div>
+										<div className="grid grid-cols-5 gap-1.5">
+											{/* Current User First */}
+											{activeUsers
+												.filter((user) => user.id === "current-user")
+												.map((user) => (
+													<Tooltip key={user.id}>
+														<TooltipTrigger asChild>
+															<div className="relative aspect-square ring-1 ring-primary/50 bg-primary/10 rounded-md overflow-hidden cursor-pointer">
+																<div className="w-full h-full flex items-center justify-center">
+																	<Avatar className="h-4 w-4">
+																		<AvatarFallback className="bg-primary/20 text-primary text-xs font-medium">{user.name.charAt(0)}</AvatarFallback>
+																	</Avatar>
+																</div>
+
+																{/* Status Dots */}
+																<div className="absolute bottom-0.5 right-0.5 flex gap-0.5">
+																	{user.hasMicrophone ? <div className="w-1.5 h-1.5 bg-white rounded-full"></div> : <div className="w-1.5 h-1.5 bg-red-400 rounded-full"></div>}
+																	{user.isSpeaking && <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>}
+																	{user.isHandRaised && <div className="w-1.5 h-1.5 bg-yellow-500 rounded-full"></div>}
+																</div>
+															</div>
+														</TooltipTrigger>
+														<TooltipContent side="right" className="bg-card border border-border/50 shadow-lg">
+															<div className="space-y-1">
+																<div className="font-medium text-foreground text-sm">You</div>
+																<div className="text-xs text-muted-foreground">Participant</div>
+															</div>
+														</TooltipContent>
+													</Tooltip>
+												))}
+
+											{/* Other Users - Limited to prevent overwhelm */}
+											{activeUsers
+												.filter((user) => user.role !== "moderator" && user.id !== "current-user")
+												.slice(0, 29) // Limit to 29 users (+ current user = 30 total)
+												.sort((a, b) => {
+													if (a.role === "participant" && b.role === "viewer") return -1;
+													if (a.role === "viewer" && b.role === "participant") return 1;
+													if (a.isHandRaised && !b.isHandRaised) return -1;
+													if (!a.isHandRaised && b.isHandRaised) return 1;
+													if (a.isSpeaking && !b.isSpeaking) return -1;
+													if (!a.isSpeaking && b.isSpeaking) return 1;
+													return b.lastActivity.getTime() - a.lastActivity.getTime();
+												})
+												.map((user) => (
+													<Tooltip key={user.id}>
+														<TooltipTrigger asChild>
+															<div className={`relative aspect-square rounded-md overflow-hidden cursor-pointer transition-all duration-200 ${user.role === "participant" ? "bg-green-500/10 border border-green-500/20 hover:border-green-500/40" : "bg-muted/30 hover:bg-muted/50"} ${user.isSpeaking ? "ring-1 ring-green-500/50" : user.isHandRaised ? "ring-1 ring-yellow-500/50" : ""}`}>
+																<div className="w-full h-full flex items-center justify-center">
+																	<Avatar className="h-4 w-4">
+																		<AvatarFallback className="bg-primary/20 text-primary text-xs font-medium">{user.name.charAt(0)}</AvatarFallback>
+																	</Avatar>
+																</div>
+
+																{/* Status Dots */}
+																<div className="absolute bottom-0.5 right-0.5 flex gap-0.5">
+																	{user.hasMicrophone ? <div className="w-1.5 h-1.5 bg-white rounded-full"></div> : <div className="w-1.5 h-1.5 bg-red-400 rounded-full"></div>}
+																	{user.isSpeaking && <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>}
+																	{user.isHandRaised && <div className="w-1.5 h-1.5 bg-yellow-500 rounded-full"></div>}
+																	{user.role === "participant" && <div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>}
+																</div>
+															</div>
+														</TooltipTrigger>
+														<TooltipContent side="right" className="bg-card border border-border/50 shadow-lg">
+															<div className="space-y-1">
+																<div className="font-medium text-foreground text-sm">{user.name}</div>
+																<div className="text-xs text-muted-foreground">{user.role === "participant" ? "Participant" : "Viewer"}</div>
+															</div>
+														</TooltipContent>
+													</Tooltip>
+												))}
+
+											{/* Show More Indicator */}
+											{activeUsers.filter((user) => user.role !== "moderator" && user.id !== "current-user").length > 29 && (
+												<div className="relative aspect-square bg-muted/20 border border-muted/40 rounded-md overflow-hidden cursor-pointer transition-all duration-200 hover:bg-muted/30 flex items-center justify-center">
+													<span className="text-xs text-muted-foreground font-medium">+{activeUsers.filter((user) => user.role !== "moderator" && user.id !== "current-user").length - 29}</span>
 												</div>
-											</TooltipTrigger>
-											<TooltipContent side="right" className="max-w-xs bg-card border border-border/50 shadow-lg">
-												<div className="space-y-3">
-													<div className="font-medium text-foreground">{agent.name}</div>
-													<div className="text-xs text-muted-foreground">{agent.description}</div>
-													<div className="text-xs">
-														<strong className="text-foreground">Expertise:</strong> {agent.expertise.join(", ")}
-													</div>
-													<div className="text-xs">
-														<strong className="text-foreground">Style:</strong> {agent.debateStyle}
-													</div>
-													<div className="text-xs">
-														<strong className="text-foreground">Personality:</strong> {agent.personality}
-													</div>
-												</div>
-											</TooltipContent>
-										</Tooltip>
-									))}
+											)}
+										</div>
+									</div>
 								</div>
 							</SidebarContent>
 						</Sidebar>
@@ -2128,6 +2752,17 @@ export function MultiAgentDebate({ debate, agents }: MultiAgentDebateProps) {
 					<SidebarInset className="flex-1 flex flex-col">
 						{/* Fixed Header */}
 						<header className="flex h-16 shrink-0 items-center gap-3 px-6 border-b border-border/50 bg-card/50 backdrop-blur-sm z-20">
+							<Tooltip>
+								<TooltipTrigger asChild>
+									<Button variant="ghost" size="sm" className="h-9 w-9 p-0 hover:bg-muted/50" asChild>
+										<Link href="/">
+											<House className="h-4 w-4" />
+										</Link>
+									</Button>
+								</TooltipTrigger>
+								<TooltipContent>Home</TooltipContent>
+							</Tooltip>
+
 							<Button variant="ghost" size="sm" className="h-9 w-9 p-0 hover:bg-muted/50" onClick={() => setLeftSidebarOpen(!leftSidebarOpen)}>
 								<Users className="h-4 w-4" />
 							</Button>
@@ -2156,6 +2791,15 @@ export function MultiAgentDebate({ debate, agents }: MultiAgentDebateProps) {
 										<TooltipContent>Toggle Theme</TooltipContent>
 									</Tooltip>
 								)}
+
+								<Tooltip>
+									<TooltipTrigger asChild>
+										<Button variant="ghost" size="sm" className="h-9 w-9 p-0 hover:bg-muted/50" onClick={() => setShowRulesModal(true)}>
+											<Settings className="h-4 w-4" />
+										</Button>
+									</TooltipTrigger>
+									<TooltipContent>Debate Rules</TooltipContent>
+								</Tooltip>
 
 								<Tooltip>
 									<TooltipTrigger asChild>
@@ -2196,27 +2840,68 @@ export function MultiAgentDebate({ debate, agents }: MultiAgentDebateProps) {
 								<Tooltip>
 									<TooltipTrigger asChild>
 										<Button variant="ghost" size="sm" className="h-9 w-9 p-0 hover:bg-muted/50" onClick={() => setImageGenerationEnabled(!imageGenerationEnabled)}>
-											{imageGenerationEnabled ? <Image className="h-4 w-4" /> : <ImageOff className="h-4 w-4" />}
+											{imageGenerationEnabled ? <ImageIcon className="h-4 w-4" /> : <ImageOff className="h-4 w-4" />}
 										</Button>
 									</TooltipTrigger>
 									<TooltipContent>Toggle Image Generation</TooltipContent>
 								</Tooltip>
+
+								<Tooltip>
+									<TooltipTrigger asChild>
+										<Button
+											variant="ghost"
+											size="sm"
+											className="h-9 w-9 p-0 hover:bg-muted/50"
+											onClick={() => {
+												// Demo: Start a topic change proposal
+												if (!topicChangeProposal?.active) {
+													setTopicChangeProposal({
+														id: Date.now().toString(),
+														proposedBy: "You",
+														proposedTopic: "The Role of AI in Creative Industries",
+														currentVotes: 1,
+														totalVoters: 247,
+														timeRemaining: 300,
+														active: true,
+													});
+												}
+											}}
+										>
+											<Hash className="h-4 w-4" />
+										</Button>
+									</TooltipTrigger>
+									<TooltipContent>Propose Topic Change</TooltipContent>
+								</Tooltip>
 							</div>
 
 							{/* View Mode Selector */}
-							<div className="flex items-center bg-muted/30 rounded-lg p-1">
-								<Button variant={currentView === "chat" ? "default" : "ghost"} size="sm" className="h-7 px-3 text-xs" onClick={() => setCurrentView("chat")}>
-									<MessageCircle className="h-3 w-3 mr-1.5" />
-									Chat
-								</Button>
-								<Button variant={currentView === "audio" ? "default" : "ghost"} size="sm" className="h-7 px-3 text-xs" onClick={() => setCurrentView("audio")}>
-									<Volume2 className="h-3 w-3 mr-1.5" />
-									Audio
-								</Button>
-								<Button variant={currentView === "3d" ? "default" : "ghost"} size="sm" className="h-7 px-3 text-xs" onClick={() => setCurrentView("3d")}>
-									<Box className="h-3 w-3 mr-1.5" />
-									3D
-								</Button>
+							<div className="flex items-center gap-2">
+								<div className="flex items-center bg-muted/30 rounded-lg p-1">
+									<Button variant={currentView === "chat" ? "default" : "ghost"} size="sm" className="h-7 px-3 text-xs" onClick={() => setCurrentView("chat")}>
+										<MessageCircle className="h-3 w-3 mr-1.5" />
+										Chat
+									</Button>
+									<Button variant={currentView === "audio" ? "default" : "ghost"} size="sm" className="h-7 px-3 text-xs" onClick={() => setCurrentView("audio")}>
+										<Volume2 className="h-3 w-3 mr-1.5" />
+										Audio
+									</Button>
+									<Button variant={currentView === "3d" ? "default" : "ghost"} size="sm" className="h-7 px-3 text-xs" onClick={() => setCurrentView("3d")}>
+										<Box className="h-3 w-3 mr-1.5" />
+										3D
+									</Button>
+								</div>
+
+								{/* Thread View Toggle */}
+								{currentView === "chat" && (
+									<div className="flex items-center bg-muted/30 rounded-lg p-1">
+										<Button variant={viewMode === "threaded" ? "default" : "ghost"} size="sm" className="h-7 px-2 text-xs" onClick={() => setViewMode("threaded")}>
+											Threaded
+										</Button>
+										<Button variant={viewMode === "chronological" ? "default" : "ghost"} size="sm" className="h-7 px-2 text-xs" onClick={() => setViewMode("chronological")}>
+											Timeline
+										</Button>
+									</div>
+								)}
 							</div>
 
 							<Button variant="ghost" size="sm" className="h-9 w-9 p-0 hover:bg-muted/50" onClick={() => setRightSidebarOpen(!rightSidebarOpen)}>
@@ -2238,23 +2923,69 @@ export function MultiAgentDebate({ debate, agents }: MultiAgentDebateProps) {
 											</Badge>
 										</div>
 										<div className="space-y-6 max-w-4xl mx-auto">
-											{messages.map((message) => {
+											{organizeMessages(messages).map((message) => {
 												const isAI = message.senderType === "ai";
 												const isExpanded = expandedMessages.has(message.id);
+												const isReply = Boolean(message.replyToId);
+												const threadDepth = message.threadDepth || 0;
+												const indentation = viewMode === "threaded" ? threadDepth * 48 : 0; // 48px per level for more visibility
+												const isThreaded = viewMode === "threaded" && threadDepth > 0;
 
 												return (
-													<div key={message.id} className={`flex gap-4 ${isAI ? "" : "justify-end"}`}>
+													<div key={message.id} className={`flex gap-4 ${isAI ? "" : "justify-end"} ${isReply && viewMode === "threaded" ? "opacity-95" : ""}`} style={{ marginLeft: `${indentation}px` }}>
+														{/* Threading Visual Indicator */}
+														{isThreaded && (
+															<div className="flex items-start pt-2 mr-2">
+																<div className="flex flex-col items-center">
+																	{/* Vertical line connecting to parent */}
+																	<div className="w-0.5 bg-border/40 h-6 -mt-6"></div>
+																	{/* Corner connector */}
+																	<div className="w-4 h-0.5 bg-border/40"></div>
+																	{/* Thread depth indicator */}
+																	<div className="w-6 h-6 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center mt-1">
+																		<span className="text-xs text-primary font-medium">{threadDepth}</span>
+																	</div>
+																</div>
+															</div>
+														)}
 														{isAI && (
 															<Avatar className="h-10 w-10 ring-2 ring-background shadow-sm">
 																<AvatarImage src={message.senderAvatar} alt={message.senderName} />
 																<AvatarFallback className="bg-primary/10 text-primary font-medium">{message.senderName.charAt(0)}</AvatarFallback>
 															</Avatar>
 														)}
+														{!isAI && (
+															<Avatar className="h-10 w-10 ring-2 ring-background shadow-sm order-last">
+																<AvatarImage src={message.senderAvatar} alt={message.senderName} />
+																<AvatarFallback className="bg-blue-500/10 text-blue-600 font-medium">{message.senderName.charAt(0)}</AvatarFallback>
+															</Avatar>
+														)}
 
 														<div className={`flex-1 max-w-2xl ${!isAI ? "order-first" : ""}`}>
+															{/* Reply Context - Show what this message is replying to */}
+															{isThreaded && message.replyToId && (
+																<div className="mb-2 p-2 bg-muted/30 border border-border/30 rounded-lg text-xs">
+																	<div className="flex items-center gap-2 text-muted-foreground">
+																		<span>↳ Replying to:</span>
+																		<span className="font-medium">
+																			{(() => {
+																				const parentMessage = messages.find((m) => m.id === message.replyToId);
+																				return parentMessage ? `${parentMessage.senderName}: ${parentMessage.content.slice(0, 50)}${parentMessage.content.length > 50 ? "..." : ""}` : "Previous message";
+																			})()}
+																		</span>
+																	</div>
+																</div>
+															)}
+
 															{isAI && (
 																<div className="flex items-center gap-2 mb-2">
 																	<span className="font-medium text-sm text-foreground">{message.senderName}</span>
+																	<span className="text-xs text-muted-foreground">{message.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+																	{isThreaded && (
+																		<Badge variant="outline" className="text-xs px-2 py-0.5 bg-blue-500/10 border-blue-500/30 text-blue-600">
+																			Thread Level {threadDepth}
+																		</Badge>
+																	)}
 																	{message.confidence && (
 																		<Badge variant="outline" className="text-xs px-2 py-0.5 bg-primary/5 border-primary/20 text-primary">
 																			{Math.round(message.confidence * 100)}%
@@ -2265,6 +2996,17 @@ export function MultiAgentDebate({ debate, agents }: MultiAgentDebateProps) {
 																			{message.emotion}
 																		</Badge>
 																	)}
+																</div>
+															)}
+															{!isAI && (
+																<div className="flex items-center gap-2 mb-2 justify-end">
+																	{isThreaded && (
+																		<Badge variant="outline" className="text-xs px-2 py-0.5 bg-blue-500/10 border-blue-500/30 text-blue-600">
+																			Thread Level {threadDepth}
+																		</Badge>
+																	)}
+																	<span className="text-xs text-muted-foreground">{message.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+																	<span className="font-medium text-sm text-foreground">{message.senderName}</span>
 																</div>
 															)}
 
@@ -2287,7 +3029,7 @@ export function MultiAgentDebate({ debate, agents }: MultiAgentDebateProps) {
 
 															<Tooltip>
 																<TooltipTrigger asChild>
-																	<div className={`p-4 rounded-xl shadow-sm cursor-pointer hover:shadow-md transition-all duration-200 ${isAI ? "bg-card border border-border/50 hover:border-border/70" : message.senderType === "viewer" ? "bg-zinc-900 dark:bg-zinc-800 text-zinc-100 border border-zinc-700 ml-auto" : "bg-primary text-primary-foreground ml-auto"}`}>
+																	<div className={`p-4 rounded-xl shadow-sm cursor-pointer hover:shadow-md transition-all duration-200 ${isAI ? "bg-card border border-border/50 hover:border-border/70" : message.senderType === "viewer" ? "bg-zinc-900 dark:bg-zinc-800 text-zinc-100 border border-zinc-700 ml-auto" : "bg-zinc-900 dark:bg-zinc-800 text-zinc-100 border border-zinc-700 ml-auto"}`}>
 																		<div className="text-sm leading-relaxed whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: processContent(message.content) }} />
 
 																		{/* Media Previews - Images, Videos, Files */}
@@ -2312,7 +3054,7 @@ export function MultiAgentDebate({ debate, agents }: MultiAgentDebateProps) {
 																								/>
 																								<div className="hidden w-full max-w-md h-48 rounded-xl border border-border/30 bg-muted/50 flex items-center justify-center">
 																									<div className="text-center">
-																										<Image className="h-12 w-12 text-muted-foreground mx-auto mb-2" />
+																										<ImageIcon className="h-12 w-12 text-muted-foreground mx-auto mb-2" />
 																										<p className="text-sm text-muted-foreground">{attachment.name}</p>
 																									</div>
 																								</div>
@@ -2457,7 +3199,7 @@ export function MultiAgentDebate({ debate, agents }: MultiAgentDebateProps) {
 
 																					<div className="p-2 bg-muted/20 rounded-lg">
 																						<div className="text-muted-foreground mb-1">Time</div>
-																						<div className="font-mono text-foreground font-medium">{(Math.random() * 3 + 1).toFixed(1)}s</div>
+																						<div className="font-mono text-foreground font-medium">2.3s</div>
 																					</div>
 																				</div>
 
@@ -2479,7 +3221,7 @@ export function MultiAgentDebate({ debate, agents }: MultiAgentDebateProps) {
 																						</div>
 																						<div className="flex justify-between">
 																							<span className="text-muted-foreground">Speed:</span>
-																							<span className="font-mono">{Math.floor(Math.random() * 50 + 20)} t/s</span>
+																							<span className="font-mono">35 t/s</span>
 																						</div>
 																					</div>
 																				</div>
@@ -2670,7 +3412,7 @@ export function MultiAgentDebate({ debate, agents }: MultiAgentDebateProps) {
 																		<Popover>
 																			<PopoverTrigger asChild>
 																				<Button variant="outline" size="sm" className="h-6 px-2 text-xs bg-blue-500/5 hover:bg-blue-500/10 border-blue-500/30 text-blue-600">
-																					{message.generatedContent.type === "image" && <Image className="h-3 w-3 mr-1" />}
+																					{message.generatedContent.type === "image" && <ImageIcon className="h-3 w-3 mr-1" />}
 																					{message.generatedContent.type === "video" && <Video className="h-3 w-3 mr-1" />}
 																					{message.generatedContent.type === "code" && <Code className="h-3 w-3 mr-1" />}
 																					{message.generatedContent.type === "data" && <BarChart3 className="h-3 w-3 mr-1" />}
@@ -3073,7 +3815,7 @@ export function MultiAgentDebate({ debate, agents }: MultiAgentDebateProps) {
 												)}
 
 												{/* Send Button */}
-												<Button onClick={handleSendMessage} disabled={!inputValue.trim() || isLoading} size="sm" className="h-9 w-9 rounded-xl flex items-center justify-center bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200">
+												<Button onClick={handleSendMessage} disabled={!inputValue.trim() || isLoading} size="sm" className="h-9 w-9 rounded-xl flex items-center justify-center bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-600 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200">
 													{isLoading ? <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <Send className="h-4 w-4" />}
 												</Button>
 											</div>
@@ -3156,194 +3898,157 @@ export function MultiAgentDebate({ debate, agents }: MultiAgentDebateProps) {
 								</div>
 							)}
 						</div>
-					</SidebarInset>
+					</SidebarInset>;
 
-					{/* Right Sidebar - Live Chat */}
-					{rightSidebarOpen && (
-						<Sidebar side="right" collapsible="offcanvas" className="border-l border-border/50 bg-card/50 backdrop-blur-sm">
-							<SidebarHeader className="border-b border-border/50 p-4 bg-card/80">
-								<div className="flex items-center gap-2">
-									<div className="p-1.5 bg-primary/10 rounded-lg">
-										<MessageCircle className="h-4 w-4 text-primary" />
+					{
+						/* Right Sidebar - Live Chat */
+					}
+					{
+						rightSidebarOpen && (
+							<Sidebar side="right" collapsible="offcanvas" className="border-l border-border/50 bg-card/50 backdrop-blur-sm">
+								<SidebarHeader className="border-b border-border/50 p-4 bg-card/80">
+									<div className="flex items-center gap-2">
+										<div className="p-1.5 bg-primary/10 rounded-lg">
+											<MessageCircle className="h-4 w-4 text-primary" />
+										</div>
+										<h2 className="font-semibold text-foreground">Live Chat</h2>
+										<Badge variant="outline" className="text-xs border-green-500/50 text-green-600 bg-green-500/10 ml-auto">
+											{(debate.viewerCount || 1234).toLocaleString()} online
+										</Badge>
 									</div>
-									<h2 className="font-semibold text-foreground">Live Chat</h2>
-									<Badge variant="outline" className="text-xs border-green-500/50 text-green-600 bg-green-500/10 ml-auto">
-										{(debate.viewerCount || 1234).toLocaleString()} online
-									</Badge>
-								</div>
-							</SidebarHeader>
-							<SidebarContent>
-								{/* Chat Messages */}
-								<div className="flex-1 min-h-0 p-3 overflow-hidden">
-									<div className="h-full overflow-y-auto pr-2 space-y-3">
-										{chatMessages.map((message) => {
-											const isUser = message.senderId === "current-user";
-											return (
-												<div key={message.id} className={`flex gap-2 ${isUser ? "justify-end" : ""}`}>
-													{!isUser && (
-														<Avatar className="h-6 w-6 ring-1 ring-border flex-shrink-0">
-															<AvatarFallback className="bg-secondary text-secondary-foreground text-xs font-medium">{message.senderName.charAt(0)}</AvatarFallback>
-														</Avatar>
-													)}
-
-													<div className={`flex-1 max-w-48 ${isUser ? "order-first" : ""}`}>
+								</SidebarHeader>
+								<SidebarContent>
+									{/* Chat Messages */}
+									<div className="flex-1 min-h-0 p-3 overflow-hidden">
+										<div className="h-full overflow-y-auto pr-2 space-y-3">
+											{chatMessages.map((message) => {
+												const isUser = message.senderId === "current-user";
+												return (
+													<div key={message.id} className={`flex gap-2 ${isUser ? "justify-end" : ""}`}>
 														{!isUser && (
-															<div className="flex items-center gap-1 mb-1">
-																<span className="font-medium text-xs text-foreground">{message.senderName}</span>
-															</div>
+															<Avatar className="h-6 w-6 ring-1 ring-border flex-shrink-0">
+																<AvatarFallback className="bg-secondary text-secondary-foreground text-xs font-medium">{message.senderName.charAt(0)}</AvatarFallback>
+															</Avatar>
 														)}
 
-														<div className={`p-2.5 rounded-lg text-xs shadow-sm ${isUser ? "bg-primary text-primary-foreground ml-auto" : "bg-muted/50 border border-border/30"}`}>
-															<div className="leading-relaxed whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: processContent(message.content) }} />
-														</div>
+														<div className={`flex-1 max-w-48 ${isUser ? "order-first" : ""}`}>
+															{!isUser && (
+																<div className="flex items-center gap-1 mb-1">
+																	<span className="font-medium text-xs text-foreground">{message.senderName}</span>
+																</div>
+															)}
 
-														<div className={`flex items-center gap-2 mt-1 text-xs text-muted-foreground ${isUser ? "justify-end" : ""}`}>
-															<span>{message.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+															<div className={`p-2.5 rounded-lg text-xs shadow-sm ${isUser ? "bg-zinc-900 dark:bg-zinc-800 text-zinc-100 border border-zinc-700 ml-auto" : "bg-muted/50 border border-border/30"}`}>
+																<div className="leading-relaxed whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: processContent(message.content) }} />
+															</div>
+
+															<div className={`flex items-center gap-2 mt-1 text-xs text-muted-foreground ${isUser ? "justify-end" : ""}`}>
+																<span>{message.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+															</div>
 														</div>
 													</div>
-												</div>
-											);
-										})}
+												);
+											})}
+										</div>
 									</div>
-								</div>
 
-								{/* Chat Input */}
-								<div className="p-3 border-t border-border/50 flex-shrink-0 bg-card/50">
-									{isViewerPaid ? (
-										<div className="flex gap-2">
-											<div className="flex-1">
-												<Input value={chatInputValue} onChange={(e) => setChatInputValue(e.target.value)} onKeyPress={handleChatKeyPress} placeholder="Send a message..." className="h-9 bg-background border-border/50 focus:border-primary/50 text-xs rounded-lg" />
+									{/* Topic Change Proposal */}
+									{topicChangeProposal?.active && (
+										<div className="p-3 border-t border-border/50 bg-yellow-500/10 border-yellow-500/20">
+											<div className="text-xs space-y-2">
+												<div className="font-medium text-yellow-600">Topic Change Proposal</div>
+												<div className="text-foreground">&ldquo;{topicChangeProposal.proposedTopic}&rdquo;</div>
+												<div className="text-muted-foreground">
+													by {topicChangeProposal.proposedBy} • {topicChangeProposal.currentVotes}/{topicChangeProposal.totalVoters} votes ({Math.round((topicChangeProposal.currentVotes / topicChangeProposal.totalVoters) * 100)}%)
+												</div>
+												{!hasVotedForTopicChange && (
+													<div className="flex gap-2 mt-2">
+														<Button onClick={() => voteForTopicChange(true)} size="sm" variant="outline" className="h-6 px-2 text-xs border-green-500/50 text-green-600 hover:bg-green-500/10">
+															Support
+														</Button>
+														<Button onClick={() => voteForTopicChange(false)} size="sm" variant="outline" className="h-6 px-2 text-xs border-red-500/50 text-red-600 hover:bg-red-500/10">
+															Oppose
+														</Button>
+													</div>
+												)}
 											</div>
-											<Button onClick={handleSendChatMessage} disabled={!chatInputValue.trim()} size="sm" className="h-9 px-3 bg-primary hover:bg-primary/90 text-primary-foreground font-medium rounded-lg">
-												<Send className="h-3 w-3" />
+										</div>
+									)}
+
+									{/* Chat Input */}
+									<div className="p-4 border-t border-border/30">
+										<div className="flex gap-2">
+											<Input value={chatInputValue} onChange={(e) => setChatInputValue(e.target.value)} onKeyPress={handleChatKeyPress} placeholder={aiCooldownTimer > 0 ? `AI cooldown: ${aiCooldownTimer}s` : "Type a message..."} className="flex-1 h-10 bg-background/50 border-border/30 focus:border-primary/50 text-sm rounded-xl" disabled={aiCooldownTimer > 0 && chatInputValue.toLowerCase().startsWith("@")} maxLength={debate.rules?.maxMessageLength || 500} />
+											<Button onClick={handleSendChatMessage} disabled={!chatInputValue.trim()} size="sm" className="h-10 w-10 p-0 bg-primary hover:bg-primary/90 rounded-xl">
+												<Send className="h-4 w-4" />
 											</Button>
 										</div>
-									) : (
-										<div className="relative">
-											{/* Paywall Overlay */}
-											<div className="bg-gradient-to-r from-primary/10 via-purple-500/10 to-primary/10 border border-primary/20 rounded-xl p-4 backdrop-blur-sm">
-												<div className="text-center">
-													<div className="flex items-center justify-center mb-3">
-														<div className="p-2 bg-primary/10 rounded-full">
-															<MessageCircle className="h-5 w-5 text-primary" />
-														</div>
-													</div>
-													<h3 className="font-semibold text-sm text-foreground mb-2">Join the Conversation</h3>
-													<p className="text-xs text-muted-foreground mb-4 leading-relaxed">Unlock real-time chat access and participate in the debate with AI agents and other viewers.</p>
 
-													<div className="space-y-2 mb-4">
-														<div className="flex items-center justify-between text-xs">
-															<span className="text-muted-foreground">Monthly Access</span>
-															<span className="font-semibold text-primary">$9.99</span>
-														</div>
-														<div className="flex items-center justify-between text-xs">
-															<span className="text-muted-foreground">• Unlimited messages</span>
-														</div>
-														<div className="flex items-center justify-between text-xs">
-															<span className="text-muted-foreground">• Priority response</span>
-														</div>
-														<div className="flex items-center justify-between text-xs">
-															<span className="text-muted-foreground">• Custom themes</span>
-														</div>
-													</div>
-
-													<Button onClick={() => setShowPaywall(true)} size="sm" className="w-full h-8 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 text-white font-medium rounded-lg shadow-sm">
-														Unlock Chat Access
-													</Button>
-
-													<p className="text-xs text-muted-foreground/60 mt-2">Secure payment via Stripe</p>
-												</div>
-											</div>
-										</div>
-									)}
-
-									{isViewerPaid && (
-										<div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
-											<span>Press Enter to send</span>
-											<div className="flex items-center gap-2">
-												<span>{chatMessages.length} messages</span>
-												<Badge variant="outline" className="text-xs border-green-500/50 text-green-600 bg-green-500/10">
-													Premium
-												</Badge>
-											</div>
-										</div>
-									)}
-								</div>
-							</SidebarContent>
-						</Sidebar>
-					)}
+										{aiCooldownTimer > 0 && <div className="mt-2 text-xs text-muted-foreground text-center">AI cooldown: {aiCooldownTimer}s remaining</div>}
+									</div>
+								</SidebarContent>
+							</Sidebar>
+						);
+					}
 				</div>
 			</SidebarProvider>
 
-			{/* Paywall Modal */}
-			{showPaywall && (
+			{/* Debate Rules Modal */}
+			{showRulesModal && (
 				<div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
 					<div className="bg-card border border-border rounded-2xl shadow-2xl max-w-md w-full p-6 animate-in zoom-in-95 duration-200">
 						<div className="text-center">
 							<div className="flex items-center justify-center mb-4">
 								<div className="p-3 bg-gradient-to-br from-primary/20 to-purple-500/20 rounded-full">
-									<MessageCircle className="h-8 w-8 text-primary" />
+									<Settings className="h-8 w-8 text-primary" />
 								</div>
 							</div>
 
-							<h2 className="text-xl font-bold text-foreground mb-2">Premium Chat Access</h2>
-							<p className="text-muted-foreground mb-6 leading-relaxed">Join the conversation with AI agents and premium viewers in real-time.</p>
+							<h2 className="text-xl font-bold text-foreground mb-2">Debate Rules</h2>
+							<p className="text-muted-foreground mb-6 leading-relaxed">Community guidelines to ensure productive and respectful discussions.</p>
 
 							<div className="space-y-4 mb-6 text-left">
-								<div className="flex items-center gap-3">
-									<div className="w-5 h-5 bg-green-500/20 rounded-full flex items-center justify-center flex-shrink-0">
-										<div className="w-2 h-2 bg-green-500 rounded-full"></div>
+								<div className="flex items-start gap-3">
+									<div className="w-5 h-5 bg-blue-500/20 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+										<div className="w-2 h-2 bg-blue-500 rounded-full"></div>
 									</div>
-									<span className="text-sm text-foreground">Unlimited messages and real-time chat</span>
-								</div>
-								<div className="flex items-center gap-3">
-									<div className="w-5 h-5 bg-green-500/20 rounded-full flex items-center justify-center flex-shrink-0">
-										<div className="w-2 h-2 bg-green-500 rounded-full"></div>
-									</div>
-									<span className="text-sm text-foreground">Priority responses from AI agents</span>
-								</div>
-								<div className="flex items-center gap-3">
-									<div className="w-5 h-5 bg-green-500/20 rounded-full flex items-center justify-center flex-shrink-0">
-										<div className="w-2 h-2 bg-green-500 rounded-full"></div>
-									</div>
-									<span className="text-sm text-foreground">Custom themes and exclusive features</span>
-								</div>
-								<div className="flex items-center gap-3">
-									<div className="w-5 h-5 bg-green-500/20 rounded-full flex items-center justify-center flex-shrink-0">
-										<div className="w-2 h-2 bg-green-500 rounded-full"></div>
-									</div>
-									<span className="text-sm text-foreground">Access to premium debates and events</span>
-								</div>
-							</div>
-
-							<div className="bg-gradient-to-r from-primary/10 via-purple-500/10 to-primary/10 border border-primary/20 rounded-xl p-4 mb-6">
-								<div className="flex items-center justify-between">
 									<div>
-										<div className="text-lg font-bold text-foreground">$9.99</div>
-										<div className="text-xs text-muted-foreground">per month</div>
+										<span className="text-sm font-medium text-foreground">Message Length</span>
+										<p className="text-xs text-muted-foreground">Maximum {debate.rules?.maxMessageLength || 500} characters per message</p>
 									</div>
-									<Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/30">
-										Most Popular
-									</Badge>
+								</div>
+								<div className="flex items-start gap-3">
+									<div className="w-5 h-5 bg-blue-500/20 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+										<div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+									</div>
+									<div>
+										<span className="text-sm font-medium text-foreground">Cooldown Period</span>
+										<p className="text-xs text-muted-foreground">{debate.rules?.cooldownBetweenMessages || 10} seconds between messages</p>
+									</div>
+								</div>
+								<div className="flex items-start gap-3">
+									<div className="w-5 h-5 bg-blue-500/20 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+										<div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+									</div>
+									<div>
+										<span className="text-sm font-medium text-foreground">Topic Changes</span>
+										<p className="text-xs text-muted-foreground">Requires {debate.rules?.topicChangeVoteThreshold || 60}% community approval</p>
+									</div>
+								</div>
+								<div className="flex items-start gap-3">
+									<div className="w-5 h-5 bg-blue-500/20 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+										<div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+									</div>
+									<div>
+										<span className="text-sm font-medium text-foreground">Stay On Topic</span>
+										<p className="text-xs text-muted-foreground">Keep discussions relevant to the current debate topic</p>
+									</div>
 								</div>
 							</div>
 
-							<div className="space-y-3">
-								<Button
-									onClick={() => {
-										setIsViewerPaid(true);
-										setShowPaywall(false);
-									}}
-									className="w-full bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 text-white font-semibold shadow-lg"
-								>
-									Subscribe Now
-								</Button>
-								<Button variant="outline" onClick={() => setShowPaywall(false)} className="w-full">
-									Maybe Later
-								</Button>
-							</div>
-
-							<p className="text-xs text-muted-foreground/60 mt-4 leading-relaxed">Secure payment processing by Stripe. Cancel anytime. By subscribing, you agree to our Terms of Service and Privacy Policy.</p>
+							<Button variant="outline" onClick={() => setShowRulesModal(false)} className="w-full">
+								Got it
+							</Button>
 						</div>
 					</div>
 				</div>
