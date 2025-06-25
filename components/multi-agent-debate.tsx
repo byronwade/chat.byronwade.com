@@ -3898,98 +3898,94 @@ export function MultiAgentDebate({ debate, agents }: MultiAgentDebateProps) {
 								</div>
 							)}
 						</div>
-					</SidebarInset>;
+					</SidebarInset>
 
-					{
-						/* Right Sidebar - Live Chat */
-					}
-					{
-						rightSidebarOpen && (
-							<Sidebar side="right" collapsible="offcanvas" className="border-l border-border/50 bg-card/50 backdrop-blur-sm">
-								<SidebarHeader className="border-b border-border/50 p-4 bg-card/80">
-									<div className="flex items-center gap-2">
-										<div className="p-1.5 bg-primary/10 rounded-lg">
-											<MessageCircle className="h-4 w-4 text-primary" />
-										</div>
-										<h2 className="font-semibold text-foreground">Live Chat</h2>
-										<Badge variant="outline" className="text-xs border-green-500/50 text-green-600 bg-green-500/10 ml-auto">
-											{(debate.viewerCount || 1234).toLocaleString()} online
-										</Badge>
+					{/* Right Sidebar - Live Chat */}
+					{rightSidebarOpen && (
+						<Sidebar side="right" collapsible="offcanvas" className="border-l border-border/50 bg-card/50 backdrop-blur-sm">
+							<SidebarHeader className="border-b border-border/50 p-4 bg-card/80">
+								<div className="flex items-center gap-2">
+									<div className="p-1.5 bg-primary/10 rounded-lg">
+										<MessageCircle className="h-4 w-4 text-primary" />
 									</div>
-								</SidebarHeader>
-								<SidebarContent>
-									{/* Chat Messages */}
-									<div className="flex-1 min-h-0 p-3 overflow-hidden">
-										<div className="h-full overflow-y-auto pr-2 space-y-3">
-											{chatMessages.map((message) => {
-												const isUser = message.senderId === "current-user";
-												return (
-													<div key={message.id} className={`flex gap-2 ${isUser ? "justify-end" : ""}`}>
+									<h2 className="font-semibold text-foreground">Live Chat</h2>
+									<Badge variant="outline" className="text-xs border-green-500/50 text-green-600 bg-green-500/10 ml-auto">
+										{(debate.viewerCount || 1234).toLocaleString()} online
+									</Badge>
+								</div>
+							</SidebarHeader>
+							<SidebarContent>
+								{/* Chat Messages */}
+								<div className="flex-1 min-h-0 p-3 overflow-hidden">
+									<div className="h-full overflow-y-auto pr-2 space-y-3">
+										{chatMessages.map((message) => {
+											const isUser = message.senderId === "current-user";
+											return (
+												<div key={message.id} className={`flex gap-2 ${isUser ? "justify-end" : ""}`}>
+													{!isUser && (
+														<Avatar className="h-6 w-6 ring-1 ring-border flex-shrink-0">
+															<AvatarFallback className="bg-secondary text-secondary-foreground text-xs font-medium">{message.senderName.charAt(0)}</AvatarFallback>
+														</Avatar>
+													)}
+
+													<div className={`flex-1 max-w-48 ${isUser ? "order-first" : ""}`}>
 														{!isUser && (
-															<Avatar className="h-6 w-6 ring-1 ring-border flex-shrink-0">
-																<AvatarFallback className="bg-secondary text-secondary-foreground text-xs font-medium">{message.senderName.charAt(0)}</AvatarFallback>
-															</Avatar>
+															<div className="flex items-center gap-1 mb-1">
+																<span className="font-medium text-xs text-foreground">{message.senderName}</span>
+															</div>
 														)}
 
-														<div className={`flex-1 max-w-48 ${isUser ? "order-first" : ""}`}>
-															{!isUser && (
-																<div className="flex items-center gap-1 mb-1">
-																	<span className="font-medium text-xs text-foreground">{message.senderName}</span>
-																</div>
-															)}
+														<div className={`p-2.5 rounded-lg text-xs shadow-sm ${isUser ? "bg-zinc-900 dark:bg-zinc-800 text-zinc-100 border border-zinc-700 ml-auto" : "bg-muted/50 border border-border/30"}`}>
+															<div className="leading-relaxed whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: processContent(message.content) }} />
+														</div>
 
-															<div className={`p-2.5 rounded-lg text-xs shadow-sm ${isUser ? "bg-zinc-900 dark:bg-zinc-800 text-zinc-100 border border-zinc-700 ml-auto" : "bg-muted/50 border border-border/30"}`}>
-																<div className="leading-relaxed whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: processContent(message.content) }} />
-															</div>
-
-															<div className={`flex items-center gap-2 mt-1 text-xs text-muted-foreground ${isUser ? "justify-end" : ""}`}>
-																<span>{message.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
-															</div>
+														<div className={`flex items-center gap-2 mt-1 text-xs text-muted-foreground ${isUser ? "justify-end" : ""}`}>
+															<span>{message.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
 														</div>
 													</div>
-												);
-											})}
-										</div>
-									</div>
-
-									{/* Topic Change Proposal */}
-									{topicChangeProposal?.active && (
-										<div className="p-3 border-t border-border/50 bg-yellow-500/10 border-yellow-500/20">
-											<div className="text-xs space-y-2">
-												<div className="font-medium text-yellow-600">Topic Change Proposal</div>
-												<div className="text-foreground">&ldquo;{topicChangeProposal.proposedTopic}&rdquo;</div>
-												<div className="text-muted-foreground">
-													by {topicChangeProposal.proposedBy} • {topicChangeProposal.currentVotes}/{topicChangeProposal.totalVoters} votes ({Math.round((topicChangeProposal.currentVotes / topicChangeProposal.totalVoters) * 100)}%)
 												</div>
-												{!hasVotedForTopicChange && (
-													<div className="flex gap-2 mt-2">
-														<Button onClick={() => voteForTopicChange(true)} size="sm" variant="outline" className="h-6 px-2 text-xs border-green-500/50 text-green-600 hover:bg-green-500/10">
-															Support
-														</Button>
-														<Button onClick={() => voteForTopicChange(false)} size="sm" variant="outline" className="h-6 px-2 text-xs border-red-500/50 text-red-600 hover:bg-red-500/10">
-															Oppose
-														</Button>
-													</div>
-												)}
-											</div>
-										</div>
-									)}
-
-									{/* Chat Input */}
-									<div className="p-4 border-t border-border/30">
-										<div className="flex gap-2">
-											<Input value={chatInputValue} onChange={(e) => setChatInputValue(e.target.value)} onKeyPress={handleChatKeyPress} placeholder={aiCooldownTimer > 0 ? `AI cooldown: ${aiCooldownTimer}s` : "Type a message..."} className="flex-1 h-10 bg-background/50 border-border/30 focus:border-primary/50 text-sm rounded-xl" disabled={aiCooldownTimer > 0 && chatInputValue.toLowerCase().startsWith("@")} maxLength={debate.rules?.maxMessageLength || 500} />
-											<Button onClick={handleSendChatMessage} disabled={!chatInputValue.trim()} size="sm" className="h-10 w-10 p-0 bg-primary hover:bg-primary/90 rounded-xl">
-												<Send className="h-4 w-4" />
-											</Button>
-										</div>
-
-										{aiCooldownTimer > 0 && <div className="mt-2 text-xs text-muted-foreground text-center">AI cooldown: {aiCooldownTimer}s remaining</div>}
+											);
+										})}
 									</div>
-								</SidebarContent>
-							</Sidebar>
-						);
-					}
+								</div>
+
+								{/* Topic Change Proposal */}
+								{topicChangeProposal?.active && (
+									<div className="p-3 border-t border-border/50 bg-yellow-500/10 border-yellow-500/20">
+										<div className="text-xs space-y-2">
+											<div className="font-medium text-yellow-600">Topic Change Proposal</div>
+											<div className="text-foreground">&ldquo;{topicChangeProposal.proposedTopic}&rdquo;</div>
+											<div className="text-muted-foreground">
+												by {topicChangeProposal.proposedBy} • {topicChangeProposal.currentVotes}/{topicChangeProposal.totalVoters} votes ({Math.round((topicChangeProposal.currentVotes / topicChangeProposal.totalVoters) * 100)}%)
+											</div>
+											{!hasVotedForTopicChange && (
+												<div className="flex gap-2 mt-2">
+													<Button onClick={() => voteForTopicChange(true)} size="sm" variant="outline" className="h-6 px-2 text-xs border-green-500/50 text-green-600 hover:bg-green-500/10">
+														Support
+													</Button>
+													<Button onClick={() => voteForTopicChange(false)} size="sm" variant="outline" className="h-6 px-2 text-xs border-red-500/50 text-red-600 hover:bg-red-500/10">
+														Oppose
+													</Button>
+												</div>
+											)}
+										</div>
+									</div>
+								)}
+
+								{/* Chat Input */}
+								<div className="p-4 border-t border-border/30">
+									<div className="flex gap-2">
+										<Input value={chatInputValue} onChange={(e) => setChatInputValue(e.target.value)} onKeyPress={handleChatKeyPress} placeholder={aiCooldownTimer > 0 ? `AI cooldown: ${aiCooldownTimer}s` : "Type a message..."} className="flex-1 h-10 bg-background/50 border-border/30 focus:border-primary/50 text-sm rounded-xl" disabled={aiCooldownTimer > 0 && chatInputValue.toLowerCase().startsWith("@")} maxLength={debate.rules?.maxMessageLength || 500} />
+										<Button onClick={handleSendChatMessage} disabled={!chatInputValue.trim()} size="sm" className="h-10 w-10 p-0 bg-primary hover:bg-primary/90 rounded-xl">
+											<Send className="h-4 w-4" />
+										</Button>
+									</div>
+
+									{aiCooldownTimer > 0 && <div className="mt-2 text-xs text-muted-foreground text-center">AI cooldown: {aiCooldownTimer}s remaining</div>}
+								</div>
+							</SidebarContent>
+						</Sidebar>
+					)}
 				</div>
 			</SidebarProvider>
 
