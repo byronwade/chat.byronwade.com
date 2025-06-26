@@ -8,7 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Sidebar, SidebarContent, SidebarHeader, SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { MessageCircle, Volume2, Box, Send, Users, Brain, Video, Image as ImageIcon, Clock, EyeOff, Mic, MicOff, VideoOff, ImageOff, FileText, Code, ArrowRight, ChevronDown, ChevronUp, Headphones, Maximize2, Settings, Sun, Moon, Smile, Paperclip, Calculator, Zap, Camera, Music, Globe, Hash, Sparkles, Bot, Lightbulb, BarChart3, File, X, Search, House } from "lucide-react";
+import { MessageCircle, Volume2, Box, Send, Users, Brain, Video, Image as ImageIcon, Clock, EyeOff, Mic, MicOff, VideoOff, ImageOff, FileText, Code, ArrowRight, ChevronDown, ChevronUp, ChevronRight, Headphones, Maximize2, Settings, Sun, Moon, Smile, Paperclip, Calculator, Zap, Camera, Music, Globe, Hash, Sparkles, Bot, Lightbulb, BarChart3, File, X, House } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -34,6 +34,12 @@ interface Message {
 	isMainPoint?: boolean; // Major debate points vs responses
 	replyCount?: number; // How many replies this message has
 	threadDepth?: number; // Visual indentation depth for threading
+
+	// Structured Debate System
+	debatePhase?: "question" | "initial" | "rebuttal" | "counter" | "synthesis";
+	debateRound?: number; // Which round of the debate this belongs to
+	position?: "for" | "against" | "neutral" | "synthesis";
+	targetedAgents?: string[]; // Which agents this is specifically addressing
 
 	generatedContent?: {
 		type: "image" | "video" | "code" | "data";
@@ -871,7 +877,6 @@ export function MultiAgentDebate({ debate, agents }: MultiAgentDebateProps) {
 	const [imageGenerationEnabled, setImageGenerationEnabled] = useState(true);
 	const [aiLogsVisible, setAiLogsVisible] = useState(true);
 	const messagesEndRef = useRef<HTMLDivElement>(null);
-	const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set());
 
 	// Advanced Input Features
 	const [showToolPicker, setShowToolPicker] = useState(false);
@@ -1037,62 +1042,212 @@ export function MultiAgentDebate({ debate, agents }: MultiAgentDebateProps) {
 	const [hasVotedForTopicChange, setHasVotedForTopicChange] = useState(false);
 	const [showRulesModal, setShowRulesModal] = useState(false);
 
-	// Smart Threading System - Simplified
+	// Smart Threading System - Facebook-style collapsible groups
 	const [viewMode, setViewMode] = useState<"threaded" | "chronological">("threaded");
+	const [collapsedThreads, setCollapsedThreads] = useState<Set<string>>(new Set());
 
-	// Enhanced message organization with proper threading
-	const organizeMessages = (messages: Message[]) => {
+	// Structured Debate Management
+	const [, setCurrentDebateRound] = useState(0);
+	const [currentPhase, setCurrentPhase] = useState<"waiting" | "active" | "complete">("waiting");
+	const [debateQueue, setDebateQueue] = useState<string[]>([]); // Queue of agents to respond
+	const [, setActiveDebateQuestion] = useState<string | null>(null);
+
+	// Facebook-style thread organization
+	const organizeMessagesIntoThreads = (messages: Message[]) => {
 		if (viewMode === "chronological") {
-			// Simple chronological order - all messages by timestamp
 			return messages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 		}
 
-		// Threaded mode - group by conversation threads
-		const sorted = messages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
-		const threaded: Message[] = [];
-		const messageMap = new Map<string, Message>();
+		// Group messages by thread
+		const sortedMessages = messages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+		const threadGroups: { [key: string]: Message[] } = {};
+		const rootMessages: Message[] = [];
 
-		// Create a map for quick lookup
-		sorted.forEach((msg) => messageMap.set(msg.id, msg));
-
-		// Find root messages (no replyToId) and their threads
-		const processedIds = new Set<string>();
-
-		sorted.forEach((message) => {
-			if (processedIds.has(message.id)) return;
-
+		// First pass: identify root messages and group replies
+		sortedMessages.forEach((message) => {
 			if (!message.replyToId) {
-				// This is a root message - add it and its thread
-				threaded.push(message);
-				processedIds.add(message.id);
-
-				// Find and add all replies to this message
-				const addReplies = (parentId: string, depth = 0) => {
-					const replies = sorted.filter((msg) => msg.replyToId === parentId && !processedIds.has(msg.id));
-
-					replies.forEach((reply) => {
-						// Add visual threading depth
-						reply.threadDepth = depth + 1;
-						threaded.push(reply);
-						processedIds.add(reply.id);
-
-						// Recursively add replies to this reply
-						addReplies(reply.id, depth + 1);
-					});
-				};
-
-				addReplies(message.id);
+				// This is a root message
+				const threadId = message.threadId || message.id;
+				if (!threadGroups[threadId]) {
+					threadGroups[threadId] = [];
+					rootMessages.push(message);
+				}
+			} else {
+				// This is a reply - find its thread
+				const rootMessage = sortedMessages.find((m) => m.id === message.replyToId);
+				if (rootMessage) {
+					const threadId = rootMessage.threadId || rootMessage.id;
+					if (!threadGroups[threadId]) {
+						threadGroups[threadId] = [];
+					}
+					threadGroups[threadId].push(message);
+				}
 			}
 		});
 
-		// Add any remaining messages that weren't threaded
-		sorted.forEach((message) => {
-			if (!processedIds.has(message.id)) {
-				threaded.push(message);
-			}
-		});
+		// Return organized structure for rendering
+		return { rootMessages, threadGroups };
+	};
 
-		return threaded;
+	// Toggle thread collapse/expand
+	const toggleThreadCollapse = (threadId: string) => {
+		setCollapsedThreads((prev) => {
+			const newSet = new Set(prev);
+			if (newSet.has(threadId)) {
+				newSet.delete(threadId);
+			} else {
+				newSet.add(threadId);
+			}
+			return newSet;
+		});
+	};
+
+	// Structured Debate Functions
+	const initiateStructuredDebate = (questionMessage: Message) => {
+		setActiveDebateQuestion(questionMessage.id);
+		setCurrentPhase("active");
+		setCurrentDebateRound(1);
+
+		// Create a randomized order of agents for initial positions
+		const shuffledAgents = [...agents].sort(() => Math.random() - 0.5);
+		setDebateQueue(shuffledAgents.map((agent) => agent.id));
+
+		// Start with first agent after a brief delay
+		setTimeout(() => {
+			if (shuffledAgents.length > 0) {
+				generateStructuredAIResponse(questionMessage, shuffledAgents[0], "initial", 1);
+			}
+		}, 1500);
+	};
+
+	const generateStructuredAIResponse = (questionMessage: Message, agent: AIAgent, phase: "initial" | "rebuttal" | "counter" | "synthesis", round: number) => {
+		const recentMessages = messages.slice(-10); // Last 10 messages for context
+
+		// Determine position based on agent's expertise and personality
+		const position = determineAgentPosition(agent);
+
+		// Generate contextual response based on phase
+		let prompt = "";
+		switch (phase) {
+			case "initial":
+				prompt = `As ${agent.name}, provide your initial position on: "${questionMessage.content}". Be concise but thoughtful. Take a ${position} stance based on your expertise in ${agent.expertise.join(", ")}.`;
+				break;
+			case "rebuttal":
+				prompt = `As ${agent.name}, provide a thoughtful rebuttal to the previous arguments about: "${questionMessage.content}". Challenge specific points while maintaining respect.`;
+				break;
+			case "counter":
+				prompt = `As ${agent.name}, counter the rebuttals with additional evidence or perspective on: "${questionMessage.content}". Build on your earlier position.`;
+				break;
+			case "synthesis":
+				prompt = `As ${agent.name}, provide a synthesis that acknowledges valid points from all sides regarding: "${questionMessage.content}". Find common ground.`;
+				break;
+		}
+
+		const response = generateAIResponse(prompt, "text", null);
+
+		const newMessage: Message = {
+			id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+			senderId: agent.id,
+			senderType: "ai",
+			senderName: agent.name,
+			senderAvatar: agent.avatar,
+			content: response,
+			timestamp: new Date(),
+			confidence: 0.8 + Math.random() * 0.15,
+			emotion: getDebateEmotion(phase),
+			thinking: generateThinkingProcess(prompt, "text", null),
+			replyToId: questionMessage.id,
+			threadId: questionMessage.id,
+			debatePhase: phase,
+			debateRound: round,
+			position: position,
+			targetedAgents: phase === "rebuttal" ? getTargetedAgents(recentMessages) : undefined,
+		};
+
+		setMessages((prev) => [...prev, newMessage]);
+
+		// Continue the debate flow
+		continueDebateFlow(questionMessage, agent, phase, round);
+	};
+
+	const determineAgentPosition = (agent: AIAgent): "for" | "against" | "neutral" => {
+		// Simple logic based on agent personality - could be made more sophisticated
+		const hash = agent.id.split("").reduce((a, b) => a + b.charCodeAt(0), 0);
+		const positions: Array<"for" | "against" | "neutral"> = ["for", "against", "neutral"];
+		return positions[hash % 3];
+	};
+
+	const getDebateEmotion = (phase: string): string => {
+		const emotions = {
+			initial: ["confident", "thoughtful", "analytical"],
+			rebuttal: ["determined", "focused", "challenging"],
+			counter: ["passionate", "assertive", "defensive"],
+			synthesis: ["diplomatic", "understanding", "wise"],
+		};
+		const phaseEmotions = emotions[phase as keyof typeof emotions] || ["neutral"];
+		return phaseEmotions[Math.floor(Math.random() * phaseEmotions.length)];
+	};
+
+	const getTargetedAgents = (recentMessages: Message[]): string[] => {
+		// Get agents who have recently spoken
+		const recentSpeakers = recentMessages
+			.filter((m) => m.senderType === "ai")
+			.slice(-3)
+			.map((m) => m.senderId);
+		return [...new Set(recentSpeakers)];
+	};
+
+	const continueDebateFlow = (questionMessage: Message, currentAgent: AIAgent, currentPhase: string, round: number) => {
+		const currentIndex = debateQueue.indexOf(currentAgent.id);
+		const nextIndex = (currentIndex + 1) % debateQueue.length;
+
+		// Determine next phase and timing
+		if (currentPhase === "initial" && nextIndex === 0) {
+			// All agents have given initial positions, move to rebuttals
+			setTimeout(() => {
+				setCurrentDebateRound(2);
+				if (debateQueue.length > 0) {
+					const nextAgent = agents.find((a) => a.id === debateQueue[0]);
+					if (nextAgent) {
+						generateStructuredAIResponse(questionMessage, nextAgent, "rebuttal", 2);
+					}
+				}
+			}, 2000 + Math.random() * 3000); // 2-5 second delay
+		} else if (currentPhase === "rebuttal" && nextIndex === 0) {
+			// Move to counter phase
+			setTimeout(() => {
+				setCurrentDebateRound(3);
+				if (debateQueue.length > 0) {
+					const nextAgent = agents.find((a) => a.id === debateQueue[0]);
+					if (nextAgent) {
+						generateStructuredAIResponse(questionMessage, nextAgent, "counter", 3);
+					}
+				}
+			}, 2000 + Math.random() * 3000);
+		} else if (currentPhase === "counter" && nextIndex === 0) {
+			// Move to synthesis phase
+			setTimeout(() => {
+				setCurrentDebateRound(4);
+				if (debateQueue.length > 0) {
+					const nextAgent = agents.find((a) => a.id === debateQueue[0]);
+					if (nextAgent) {
+						generateStructuredAIResponse(questionMessage, nextAgent, "synthesis", 4);
+					}
+				}
+			}, 3000 + Math.random() * 2000);
+		} else if (currentPhase === "synthesis" && nextIndex === 0) {
+			// Debate complete
+			setCurrentPhase("complete");
+			setActiveDebateQuestion(null);
+		} else {
+			// Continue with next agent in same phase
+			setTimeout(() => {
+				const nextAgent = agents.find((a) => a.id === debateQueue[nextIndex]);
+				if (nextAgent) {
+					generateStructuredAIResponse(questionMessage, nextAgent, currentPhase as "initial" | "rebuttal" | "counter" | "synthesis", round);
+				}
+			}, 1500 + Math.random() * 2500); // 1.5-4 second delay
+		}
 	};
 
 	// File upload state
@@ -1126,18 +1281,6 @@ export function MultiAgentDebate({ debate, agents }: MultiAgentDebateProps) {
 		const minutes = Math.floor((seconds % 3600) / 60);
 		const secs = seconds % 60;
 		return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-	};
-
-	const toggleMessageExpansion = (messageId: string) => {
-		setExpandedMessages((prev) => {
-			const newSet = new Set(prev);
-			if (newSet.has(messageId)) {
-				newSet.delete(messageId);
-			} else {
-				newSet.add(messageId);
-			}
-			return newSet;
-		});
 	};
 
 	// File upload handlers
@@ -1280,6 +1423,7 @@ export function MultiAgentDebate({ debate, agents }: MultiAgentDebateProps) {
 			thinking: [],
 			aiLogs: [],
 			generatedContent: null,
+			debatePhase: "question",
 			attachments:
 				uploadedFiles.length > 0
 					? uploadedFiles.map((file) => ({
@@ -1302,6 +1446,17 @@ export function MultiAgentDebate({ debate, agents }: MultiAgentDebateProps) {
 		setInputValue("");
 		setUploadedFiles([]); // Clear uploaded files
 		setIsLoading(true);
+
+		// Check if this is a question that should trigger a structured debate
+		const isQuestion = inputValue.includes("?") || inputValue.toLowerCase().startsWith("what") || inputValue.toLowerCase().startsWith("how") || inputValue.toLowerCase().startsWith("why") || inputValue.toLowerCase().startsWith("should") || inputValue.toLowerCase().startsWith("do you think");
+
+		if (isQuestion && currentPhase === "waiting") {
+			// Trigger structured debate
+			setTimeout(() => {
+				initiateStructuredDebate(newMessage);
+			}, 1000);
+			return; // Skip the regular AI response
+		}
 
 		// Simulate AI processing with enhanced features
 		setTimeout(() => {
@@ -2923,564 +3078,271 @@ export function MultiAgentDebate({ debate, agents }: MultiAgentDebateProps) {
 											</Badge>
 										</div>
 										<div className="space-y-6 max-w-4xl mx-auto">
-											{organizeMessages(messages).map((message) => {
-												const isAI = message.senderType === "ai";
-												const isExpanded = expandedMessages.has(message.id);
-												const isReply = Boolean(message.replyToId);
-												const threadDepth = message.threadDepth || 0;
-												const indentation = viewMode === "threaded" ? threadDepth * 48 : 0; // 48px per level for more visibility
-												const isThreaded = viewMode === "threaded" && threadDepth > 0;
+											{(() => {
+												const organized = organizeMessagesIntoThreads(messages);
+												if (Array.isArray(organized)) {
+													// Chronological mode - render messages with original functionality
+													return organized.map((message) => {
+														const isAI = message.senderType === "ai";
 
-												return (
-													<div key={message.id} className={`flex gap-4 ${isAI ? "" : "justify-end"} ${isReply && viewMode === "threaded" ? "opacity-95" : ""}`} style={{ marginLeft: `${indentation}px` }}>
-														{/* Threading Visual Indicator */}
-														{isThreaded && (
-															<div className="flex items-start pt-2 mr-2">
-																<div className="flex flex-col items-center">
-																	{/* Vertical line connecting to parent */}
-																	<div className="w-0.5 bg-border/40 h-6 -mt-6"></div>
-																	{/* Corner connector */}
-																	<div className="w-4 h-0.5 bg-border/40"></div>
-																	{/* Thread depth indicator */}
-																	<div className="w-6 h-6 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center mt-1">
-																		<span className="text-xs text-primary font-medium">{threadDepth}</span>
-																	</div>
-																</div>
-															</div>
-														)}
-														{isAI && (
-															<Avatar className="h-10 w-10 ring-2 ring-background shadow-sm">
-																<AvatarImage src={message.senderAvatar} alt={message.senderName} />
-																<AvatarFallback className="bg-primary/10 text-primary font-medium">{message.senderName.charAt(0)}</AvatarFallback>
-															</Avatar>
-														)}
-														{!isAI && (
-															<Avatar className="h-10 w-10 ring-2 ring-background shadow-sm order-last">
-																<AvatarImage src={message.senderAvatar} alt={message.senderName} />
-																<AvatarFallback className="bg-blue-500/10 text-blue-600 font-medium">{message.senderName.charAt(0)}</AvatarFallback>
-															</Avatar>
-														)}
-
-														<div className={`flex-1 max-w-2xl ${!isAI ? "order-first" : ""}`}>
-															{/* Reply Context - Show what this message is replying to */}
-															{isThreaded && message.replyToId && (
-																<div className="mb-2 p-2 bg-muted/30 border border-border/30 rounded-lg text-xs">
-																	<div className="flex items-center gap-2 text-muted-foreground">
-																		<span>↳ Replying to:</span>
-																		<span className="font-medium">
-																			{(() => {
-																				const parentMessage = messages.find((m) => m.id === message.replyToId);
-																				return parentMessage ? `${parentMessage.senderName}: ${parentMessage.content.slice(0, 50)}${parentMessage.content.length > 50 ? "..." : ""}` : "Previous message";
-																			})()}
-																		</span>
-																	</div>
-																</div>
-															)}
-
-															{isAI && (
-																<div className="flex items-center gap-2 mb-2">
-																	<span className="font-medium text-sm text-foreground">{message.senderName}</span>
-																	<span className="text-xs text-muted-foreground">{message.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
-																	{isThreaded && (
-																		<Badge variant="outline" className="text-xs px-2 py-0.5 bg-blue-500/10 border-blue-500/30 text-blue-600">
-																			Thread Level {threadDepth}
-																		</Badge>
-																	)}
-																	{message.confidence && (
-																		<Badge variant="outline" className="text-xs px-2 py-0.5 bg-primary/5 border-primary/20 text-primary">
-																			{Math.round(message.confidence * 100)}%
-																		</Badge>
-																	)}
-																	{message.emotion && (
-																		<Badge variant="secondary" className="text-xs px-2 py-0.5 bg-muted/50">
-																			{message.emotion}
-																		</Badge>
-																	)}
-																</div>
-															)}
-															{!isAI && (
-																<div className="flex items-center gap-2 mb-2 justify-end">
-																	{isThreaded && (
-																		<Badge variant="outline" className="text-xs px-2 py-0.5 bg-blue-500/10 border-blue-500/30 text-blue-600">
-																			Thread Level {threadDepth}
-																		</Badge>
-																	)}
-																	<span className="text-xs text-muted-foreground">{message.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
-																	<span className="font-medium text-sm text-foreground">{message.senderName}</span>
-																</div>
-															)}
-
-															{isAI && showThinking && message.thinking && (
-																<div className="mb-3 p-3 bg-blue-500/5 border border-blue-500/20 rounded-lg text-xs">
-																	<div className="flex items-center gap-2 mb-2 text-blue-600">
-																		<Brain className="h-3 w-3" />
-																		<span className="font-medium">Thinking Process</span>
-																	</div>
-																	<div className="space-y-1.5">
-																		{message.thinking.map((thought, index) => (
-																			<div key={index} className="flex items-start gap-2">
-																				<ArrowRight className="h-3 w-3 text-blue-500 mt-0.5 flex-shrink-0" />
-																				<span className="text-blue-700 dark:text-blue-300">{thought}</span>
-																			</div>
-																		))}
-																	</div>
-																</div>
-															)}
-
-															<Tooltip>
-																<TooltipTrigger asChild>
-																	<div className={`p-4 rounded-xl shadow-sm cursor-pointer hover:shadow-md transition-all duration-200 ${isAI ? "bg-card border border-border/50 hover:border-border/70" : message.senderType === "viewer" ? "bg-zinc-900 dark:bg-zinc-800 text-zinc-100 border border-zinc-700 ml-auto" : "bg-zinc-900 dark:bg-zinc-800 text-zinc-100 border border-zinc-700 ml-auto"}`}>
-																		<div className="text-sm leading-relaxed whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: processContent(message.content) }} />
-
-																		{/* Media Previews - Images, Videos, Files */}
-																		{message.attachments && message.attachments.length > 0 && (
-																			<div className="mt-3 space-y-3">
-																				{message.attachments.map((attachment) => (
-																					<div key={attachment.id}>
-																						{attachment.type === "image" && (
-																							<div className="relative group">
-																								<img
-																									src={attachment.url}
-																									alt={attachment.name}
-																									className="w-full max-w-md rounded-xl border border-border/30 shadow-sm hover:shadow-md transition-all cursor-pointer"
-																									style={{ maxHeight: "400px", objectFit: "cover" }}
-																									onClick={() => window.open(attachment.url, "_blank")}
-																									onError={(e) => {
-																										const target = e.currentTarget as HTMLImageElement;
-																										target.style.display = "none";
-																										const sibling = target.nextElementSibling as HTMLElement;
-																										if (sibling) sibling.style.display = "flex";
-																									}}
-																								/>
-																								<div className="hidden w-full max-w-md h-48 rounded-xl border border-border/30 bg-muted/50 flex items-center justify-center">
-																									<div className="text-center">
-																										<ImageIcon className="h-12 w-12 text-muted-foreground mx-auto mb-2" />
-																										<p className="text-sm text-muted-foreground">{attachment.name}</p>
-																									</div>
-																								</div>
-																								<div className="absolute top-2 right-2 bg-black/60 backdrop-blur-sm text-white px-2 py-1 rounded-md text-xs opacity-0 group-hover:opacity-100 transition-opacity">{attachment.metadata?.resolution || attachment.size}</div>
-																							</div>
-																						)}
-
-																						{attachment.type === "video" && (
-																							<div className="relative group">
-																								<video
-																									src={attachment.url}
-																									className="w-full max-w-md rounded-xl border border-border/30 shadow-sm hover:shadow-md transition-all"
-																									style={{ maxHeight: "400px" }}
-																									controls
-																									preload="metadata"
-																									onError={(e) => {
-																										const target = e.currentTarget as HTMLVideoElement;
-																										target.style.display = "none";
-																										const sibling = target.nextElementSibling as HTMLElement;
-																										if (sibling) sibling.style.display = "flex";
-																									}}
-																								/>
-																								<div className="hidden w-full max-w-md h-48 rounded-xl border border-border/30 bg-muted/50 flex items-center justify-center">
-																									<div className="text-center">
-																										<Video className="h-12 w-12 text-muted-foreground mx-auto mb-2" />
-																										<p className="text-sm text-muted-foreground">{attachment.name}</p>
-																									</div>
-																								</div>
-																								<div className="absolute top-2 right-2 bg-black/60 backdrop-blur-sm text-white px-2 py-1 rounded-md text-xs opacity-0 group-hover:opacity-100 transition-opacity">{attachment.metadata?.duration || attachment.size}</div>
-																							</div>
-																						)}
-
-																						{(attachment.type === "document" || attachment.type === "file") && (
-																							<div className="bg-muted/30 border border-border/30 rounded-xl p-4 hover:bg-muted/50 transition-colors cursor-pointer max-w-md" onClick={() => window.open(attachment.url, "_blank")}>
-																								<div className="flex items-center gap-3">
-																									<div className={`w-12 h-12 rounded-lg flex items-center justify-center ${attachment.type === "document" ? "bg-blue-500/10" : "bg-orange-500/10"}`}>{attachment.type === "document" ? <FileText className="h-6 w-6 text-blue-500" /> : <File className="h-6 w-6 text-orange-500" />}</div>
-																									<div className="flex-1 min-w-0">
-																										<div className="font-medium text-sm text-foreground truncate">{attachment.name}</div>
-																										<div className="text-xs text-muted-foreground mt-1">
-																											{attachment.size} • {attachment.format}
-																											{attachment.metadata?.description && <span> • {attachment.metadata.description}</span>}
-																										</div>
-																										{attachment.metadata?.tags && attachment.metadata.tags.length > 0 && (
-																											<div className="flex gap-1 mt-2">
-																												{attachment.metadata.tags.slice(0, 2).map((tag) => (
-																													<Badge key={tag} variant="outline" className="h-4 px-1.5 text-xs">
-																														{tag}
-																													</Badge>
-																												))}
-																												{attachment.metadata.tags.length > 2 && <span className="text-xs text-muted-foreground">+{attachment.metadata.tags.length - 2}</span>}
-																											</div>
-																										)}
-																									</div>
-																									<div className="text-xs text-muted-foreground">Click to open</div>
-																								</div>
-																							</div>
-																						)}
-																					</div>
-																				))}
-																			</div>
-																		)}
-
-																		{/* Research Context */}
-																		{isAI && message.researchContext && (
-																			<div className="mt-4 p-3 bg-purple-500/5 border border-purple-500/20 rounded-lg">
-																				<div className="flex items-center gap-2 mb-3">
-																					<Search className="h-4 w-4 text-purple-600" />
-																					<span className="text-xs font-medium text-purple-600">Research Context</span>
-																				</div>
-																				<div className="space-y-2 text-xs">
-																					<div className="flex items-center gap-2">
-																						<span className="text-muted-foreground">Query:</span>
-																						<span className="text-foreground font-medium">{message.researchContext.query}</span>
-																					</div>
-																					<div className="flex items-center gap-2">
-																						<span className="text-muted-foreground">Results:</span>
-																						<span className="text-foreground">{message.researchContext.searchResults} sources</span>
-																						<span className="text-muted-foreground">•</span>
-																						<span className="text-foreground">{message.researchContext.searchTime}s</span>
-																					</div>
-																					{message.researchContext.filters.length > 0 && (
-																						<div className="flex items-center gap-2">
-																							<span className="text-muted-foreground">Filters:</span>
-																							<div className="flex gap-1">
-																								{message.researchContext.filters.map((filter) => (
-																									<Badge key={filter} variant="outline" className="text-xs px-1 py-0">
-																										{filter}
-																									</Badge>
-																								))}
-																							</div>
-																						</div>
-																					)}
-																					{message.researchContext.relatedTopics.length > 0 && (
-																						<div className="flex items-center gap-2">
-																							<span className="text-muted-foreground">Topics:</span>
-																							<div className="flex gap-1">
-																								{message.researchContext.relatedTopics.slice(0, 3).map((topic) => (
-																									<Badge key={topic} variant="secondary" className="text-xs px-1 py-0">
-																										{topic}
-																									</Badge>
-																								))}
-																								{message.researchContext.relatedTopics.length > 3 && <span className="text-xs text-muted-foreground">+{message.researchContext.relatedTopics.length - 3}</span>}
-																							</div>
-																						</div>
-																					)}
-																				</div>
-																			</div>
-																		)}
-																	</div>
-																</TooltipTrigger>
+														return (
+															<div key={message.id} className={`flex gap-4 ${isAI ? "" : "justify-end"}`}>
 																{isAI && (
-																	<TooltipContent side="right" className="max-w-sm bg-card/95 backdrop-blur-sm border border-border/50 shadow-2xl rounded-xl overflow-hidden" sideOffset={15} alignOffset={-50}>
-																		<ScrollArea className="max-h-80 w-full">
-																			<div className="space-y-3 p-3">
-																				{/* Header */}
-																				<div className="border-b border-border/30 pb-2">
-																					<div className="font-medium text-sm text-foreground">{message.senderName}</div>
-																					<div className="text-xs text-muted-foreground">{message.timestamp.toLocaleString()}</div>
-																				</div>
-
-																				{/* Key Stats Grid */}
-																				<div className="grid grid-cols-2 gap-2 text-xs">
-																					<div className="p-2 bg-muted/20 rounded-lg">
-																						<div className="text-muted-foreground mb-1">Confidence</div>
-																						<div className="flex items-center gap-1">
-																							<div className="flex-1 bg-muted/50 rounded-full h-1.5">
-																								<div className="bg-green-500 h-1.5 rounded-full transition-all" style={{ width: `${(message.confidence || 0) * 100}%` }}></div>
-																							</div>
-																							<span className="font-mono text-foreground text-xs">{Math.round((message.confidence || 0) * 100)}%</span>
-																						</div>
-																					</div>
-
-																					<div className="p-2 bg-muted/20 rounded-lg">
-																						<div className="text-muted-foreground mb-1">Tokens</div>
-																						<div className="font-mono text-foreground font-medium">{Math.floor(message.content.length / 4) + Math.floor(message.content.length / 3)}</div>
-																					</div>
-
-																					<div className="p-2 bg-muted/20 rounded-lg">
-																						<div className="text-muted-foreground mb-1">Cost</div>
-																						<div className="font-mono text-foreground font-medium">${(Math.floor(message.content.length / 4) * 0.00001 + Math.floor(message.content.length / 3) * 0.00003).toFixed(4)}</div>
-																					</div>
-
-																					<div className="p-2 bg-muted/20 rounded-lg">
-																						<div className="text-muted-foreground mb-1">Time</div>
-																						<div className="font-mono text-foreground font-medium">2.3s</div>
-																					</div>
-																				</div>
-
-																				{/* Detailed Breakdown */}
-																				<div className="space-y-2">
-																					<div className="text-xs font-medium text-muted-foreground">Breakdown</div>
-																					<div className="space-y-1 text-xs">
-																						<div className="flex justify-between">
-																							<span className="text-muted-foreground">Input tokens:</span>
-																							<span className="font-mono">{Math.floor(message.content.length / 4)}</span>
-																						</div>
-																						<div className="flex justify-between">
-																							<span className="text-muted-foreground">Output tokens:</span>
-																							<span className="font-mono">{Math.floor(message.content.length / 3)}</span>
-																						</div>
-																						<div className="flex justify-between">
-																							<span className="text-muted-foreground">Model:</span>
-																							<span className="font-mono">GPT-4o-mini</span>
-																						</div>
-																						<div className="flex justify-between">
-																							<span className="text-muted-foreground">Speed:</span>
-																							<span className="font-mono">35 t/s</span>
-																						</div>
-																					</div>
-																				</div>
-
-																				{/* AI Processing Steps */}
-																				{message.aiLogs && message.aiLogs.length > 0 && (
-																					<div className="space-y-2">
-																						<div className="text-xs font-medium text-muted-foreground">Processing Steps</div>
-																						<div className="space-y-1">
-																							{message.aiLogs.slice(0, 3).map((log, index) => (
-																								<div key={index} className="flex items-center justify-between p-1.5 bg-muted/20 rounded text-xs">
-																									<span className="font-mono text-foreground truncate flex-1">{log.step}</span>
-																									<span className="text-green-600 font-medium ml-2">{(log.confidence * 100).toFixed(0)}%</span>
-																								</div>
-																							))}
-																							{message.aiLogs.length > 3 && <div className="text-xs text-muted-foreground text-center">+{message.aiLogs.length - 3} more steps</div>}
-																						</div>
-																					</div>
-																				)}
-
-																				{/* Sources */}
-																				{message.sources && message.sources.length > 0 && (
-																					<div className="space-y-2">
-																						<div className="text-xs font-medium text-muted-foreground">Sources ({message.sources.length})</div>
-																						<div className="space-y-1">
-																							{message.sources.slice(0, 2).map((source) => (
-																								<div key={source.id} className="flex items-center justify-between p-1.5 bg-muted/20 rounded text-xs">
-																									<span className="text-foreground truncate flex-1">{source.title}</span>
-																									<span className="text-green-600 font-medium ml-2">{Math.round(source.relevance * 100)}%</span>
-																								</div>
-																							))}
-																							{message.sources.length > 2 && <div className="text-xs text-muted-foreground text-center">+{message.sources.length - 2} more</div>}
-																						</div>
-																					</div>
-																				)}
-
-																				{/* Footer */}
-																				<div className="pt-2 border-t border-border/30">
-																					<div className="text-xs text-muted-foreground text-center">Message #{message.id.slice(-4)}</div>
-																				</div>
-																			</div>
-																		</ScrollArea>
-																	</TooltipContent>
+																	<Avatar className="h-10 w-10 ring-2 ring-background shadow-sm">
+																		<AvatarImage src={message.senderAvatar} alt={message.senderName} />
+																		<AvatarFallback className="bg-primary/10 text-primary font-medium">{message.senderName.charAt(0)}</AvatarFallback>
+																	</Avatar>
 																)}
-															</Tooltip>
+																{!isAI && (
+																	<Avatar className="h-10 w-10 ring-2 ring-background shadow-sm order-last">
+																		<AvatarImage src={message.senderAvatar} alt={message.senderName} />
+																		<AvatarFallback className="bg-blue-500/10 text-blue-600 font-medium">{message.senderName.charAt(0)}</AvatarFallback>
+																	</Avatar>
+																)}
 
-															{/* Interactive Elements Row - Outside Message Bubble */}
-															{isAI && (message.sources || message.mentions || message.researchContext || message.generatedContent) && (
-																<div className="mt-3 flex flex-wrap items-center gap-2">
-																	{/* Sources Button */}
-																	{message.sources && message.sources.length > 0 && (
-																		<Popover>
-																			<PopoverTrigger asChild>
-																				<Button variant="outline" size="sm" className="h-6 px-2 text-xs bg-muted/30 hover:bg-muted/50 border-border/50">
-																					<div className="flex items-center gap-1.5">
-																						<div className="flex -space-x-1">
-																							{message.sources.slice(0, 3).map((source, idx) => (
-																								<div key={source.id} className={`w-3 h-3 rounded-full text-xs border border-background ${source.type === "web" ? "bg-blue-500" : source.type === "document" ? "bg-orange-500" : source.type === "video" ? "bg-red-500" : source.type === "image" ? "bg-green-500" : "bg-purple-500"}`} style={{ zIndex: 10 - idx }} />
-																							))}
-																						</div>
-																						<span className="font-medium">{message.sources.length} sources</span>
-																					</div>
-																				</Button>
-																			</PopoverTrigger>
-																			<PopoverContent className="w-80 p-3" align="start">
-																				<ScrollArea className="max-h-64">
-																					<div className="space-y-2">
-																						{message.sources.map((source) => (
-																							<div key={source.id} className="p-2 bg-muted/20 rounded border border-border/30 hover:bg-muted/40 transition-colors cursor-pointer">
-																								<div className="flex items-start gap-2">
-																									<div className={`w-5 h-5 rounded flex items-center justify-center text-xs ${source.type === "web" ? "bg-blue-500/20 text-blue-600" : source.type === "document" ? "bg-orange-500/20 text-orange-600" : "bg-purple-500/20 text-purple-600"}`}>{source.type === "web" ? "🌐" : source.type === "document" ? "📄" : "💾"}</div>
-																									<div className="flex-1 min-w-0">
-																										<h4 className="font-medium text-xs text-foreground truncate">{source.title}</h4>
-																										<p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{source.description}</p>
-																										<div className="flex items-center gap-2 mt-1">
-																											<span className="text-xs text-green-600 font-medium">{Math.round(source.relevance * 100)}%</span>
-																											{source.metadata?.author && <span className="text-xs text-muted-foreground">• {source.metadata.author}</span>}
-																										</div>
-																									</div>
-																								</div>
-																							</div>
-																						))}
-																					</div>
-																				</ScrollArea>
-																			</PopoverContent>
-																		</Popover>
-																	)}
-
-																	{/* Mentions Compact */}
-																	{message.mentions && (
-																		<div className="flex items-center gap-1">
-																			{message.mentions.users && message.mentions.users.length > 0 && (
-																				<Popover>
-																					<PopoverTrigger asChild>
-																						<Button variant="outline" size="sm" className="h-6 px-2 text-xs bg-blue-500/5 hover:bg-blue-500/10 border-blue-500/30 text-blue-600">
-																							@{message.mentions.users.length === 1 ? message.mentions.users[0] : `${message.mentions.users.length} users`}
-																						</Button>
-																					</PopoverTrigger>
-																					<PopoverContent className="w-64 p-2" align="start">
-																						<div className="text-xs font-medium mb-2">Users</div>
-																						<div className="flex flex-wrap gap-1">
-																							{message.mentions.users.map((user) => (
-																								<Badge key={user} variant="outline" className="h-5 px-1.5 text-xs bg-blue-500/10 text-blue-600 border-blue-500/30 cursor-pointer hover:bg-blue-500/20">
-																									@{user}
-																								</Badge>
-																							))}
-																						</div>
-																					</PopoverContent>
-																				</Popover>
+																<div className={`flex-1 max-w-2xl ${!isAI ? "order-first" : ""}`}>
+																	{isAI && (
+																		<div className="flex items-center gap-2 mb-2">
+																			<span className="font-medium text-sm text-foreground">{message.senderName}</span>
+																			<span className="text-xs text-muted-foreground">{message.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+																			{message.confidence && (
+																				<Badge variant="outline" className="text-xs px-2 py-0.5 bg-primary/5 border-primary/20 text-primary">
+																					{Math.round(message.confidence * 100)}%
+																				</Badge>
 																			)}
-																			{message.mentions.topics && message.mentions.topics.length > 0 && (
-																				<Popover>
-																					<PopoverTrigger asChild>
-																						<Button variant="outline" size="sm" className="h-6 px-2 text-xs bg-blue-500/5 hover:bg-blue-500/10 border-blue-500/30 text-blue-600">
-																							{message.mentions.topics.length} topics
-																						</Button>
-																					</PopoverTrigger>
-																					<PopoverContent className="w-64 p-2" align="start">
-																						<div className="text-xs font-medium mb-2">Topics</div>
-																						<div className="flex flex-wrap gap-1">
-																							{message.mentions.topics.map((topic) => (
-																								<Badge key={topic} variant="outline" className="h-5 px-1.5 text-xs bg-blue-500/10 text-blue-600 border-blue-500/30 cursor-pointer hover:bg-blue-500/20">
-																									{topic}
-																								</Badge>
-																							))}
-																						</div>
-																					</PopoverContent>
-																				</Popover>
+																			{message.emotion && (
+																				<Badge variant="secondary" className="text-xs px-2 py-0.5 bg-muted/50">
+																					{message.emotion}
+																				</Badge>
 																			)}
 																		</div>
 																	)}
-
-																	{/* Research Context Compact */}
-																	{message.researchContext && (
-																		<Popover>
-																			<PopoverTrigger asChild>
-																				<Button variant="outline" size="sm" className="h-6 px-2 text-xs bg-blue-500/5 hover:bg-blue-500/10 border-blue-500/30 text-blue-600">
-																					{message.researchContext.searchResults} results • {message.researchContext.searchTime}s
-																				</Button>
-																			</PopoverTrigger>
-																			<PopoverContent className="w-72 p-3" align="start">
-																				<div className="space-y-2">
-																					<div className="text-xs font-medium">Research Context</div>
-																					<div className="text-xs">
-																						<div>
-																							<strong>Query:</strong> {message.researchContext.query}
-																						</div>
-																						<div className="mt-1">
-																							<strong>Results:</strong> {message.researchContext.searchResults} sources • {message.researchContext.searchTime}s
-																						</div>
-																					</div>
-																					{message.researchContext.filters && message.researchContext.filters.length > 0 && (
-																						<div>
-																							<div className="text-xs font-medium mb-1">Filters:</div>
-																							<div className="flex flex-wrap gap-1">
-																								{message.researchContext.filters.map((filter) => (
-																									<Badge key={filter} variant="outline" className="h-4 px-1 text-xs bg-blue-500/10 text-blue-600 border-blue-500/30">
-																										{filter}
-																									</Badge>
-																								))}
-																							</div>
-																						</div>
-																					)}
-																					{message.researchContext.relatedTopics && message.researchContext.relatedTopics.length > 0 && (
-																						<div>
-																							<div className="text-xs font-medium mb-1">Topics:</div>
-																							<div className="flex flex-wrap gap-1">
-																								{message.researchContext.relatedTopics.slice(0, 5).map((topic) => (
-																									<Badge key={topic} variant="outline" className="h-4 px-1 text-xs bg-blue-500/10 text-blue-600 border-blue-500/30">
-																										{topic}
-																									</Badge>
-																								))}
-																								{message.researchContext.relatedTopics.length > 5 && (
-																									<Badge variant="outline" className="h-4 px-1 text-xs bg-muted/50 text-muted-foreground border-border/50">
-																										+{message.researchContext.relatedTopics.length - 5}
-																									</Badge>
-																								)}
-																							</div>
-																						</div>
-																					)}
-																				</div>
-																			</PopoverContent>
-																		</Popover>
+																	{!isAI && (
+																		<div className="flex items-center gap-2 mb-2 justify-end">
+																			<span className="text-xs text-muted-foreground">{message.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+																			<span className="font-medium text-sm text-foreground">{message.senderName}</span>
+																		</div>
 																	)}
 
-																	{/* Generated Content Tool Button */}
-																	{message.generatedContent && (
-																		<Popover>
-																			<PopoverTrigger asChild>
-																				<Button variant="outline" size="sm" className="h-6 px-2 text-xs bg-blue-500/5 hover:bg-blue-500/10 border-blue-500/30 text-blue-600">
-																					{message.generatedContent.type === "image" && <ImageIcon className="h-3 w-3 mr-1" />}
-																					{message.generatedContent.type === "video" && <Video className="h-3 w-3 mr-1" />}
-																					{message.generatedContent.type === "code" && <Code className="h-3 w-3 mr-1" />}
-																					{message.generatedContent.type === "data" && <BarChart3 className="h-3 w-3 mr-1" />}
-																					{message.generatedContent.type}
-																				</Button>
-																			</PopoverTrigger>
-																			<PopoverContent className="w-80 p-3" align="start">
-																				<div className="space-y-2">
-																					<div className="text-xs font-medium mb-2">Generated {message.generatedContent.type}</div>
-																					{message.generatedContent.type === "image" && message.generatedContent.url && <img src={message.generatedContent.url} alt="Generated" className="w-full rounded border" />}
-																					{message.generatedContent.type === "video" && message.generatedContent.url && <video src={message.generatedContent.url} controls className="w-full rounded border" />}
-																					{(message.generatedContent.type === "code" || message.generatedContent.type === "data") && message.generatedContent.content && (
-																						<pre className="bg-muted/50 p-2 rounded text-xs font-mono overflow-x-auto">
-																							<code>{message.generatedContent.content}</code>
-																						</pre>
-																					)}
-																					{message.generatedContent.metadata?.prompt && (
-																						<div className="text-xs text-muted-foreground">
-																							<strong>Prompt:</strong> {message.generatedContent.metadata.prompt}
-																						</div>
-																					)}
-																				</div>
-																			</PopoverContent>
-																		</Popover>
-																	)}
-																</div>
-															)}
-
-															{/* AI Logs */}
-															{isAI && aiLogsVisible && message.aiLogs && (
-																<div className="mt-3">
-																	<Button variant="ghost" size="sm" className="h-7 px-3 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50" onClick={() => toggleMessageExpansion(message.id)}>
-																		{isExpanded ? <ChevronUp className="h-3 w-3 mr-1.5" /> : <ChevronDown className="h-3 w-3 mr-1.5" />}
-																		AI Logs ({message.aiLogs.length} steps)
-																	</Button>
-
-																	{isExpanded && (
-																		<div className="mt-3 p-3 bg-muted/30 border border-border/30 rounded-lg text-xs">
-																			<div className="space-y-3">
-																				{message.aiLogs.map((log, index) => (
-																					<div key={index} className="p-3 bg-card/50 rounded-lg border border-border/20">
-																						<div className="flex items-center justify-between mb-2">
-																							<span className="font-medium text-foreground">{log.step}</span>
-																							<span className="text-muted-foreground">{log.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
-																						</div>
-																						<p className="text-muted-foreground mb-2">{log.thought}</p>
-																						<div className="flex items-center gap-2">
-																							<span className="text-muted-foreground">Confidence:</span>
-																							<div className="flex-1 bg-muted rounded-full h-1.5">
-																								<div className="bg-blue-500 h-1.5 rounded-full transition-all duration-300" style={{ width: `${log.confidence * 100}%` }}></div>
-																							</div>
-																							<span className="text-xs text-muted-foreground">{Math.round(log.confidence * 100)}%</span>
-																						</div>
+																	{isAI && showThinking && message.thinking && (
+																		<div className="mb-3 p-3 bg-blue-500/5 border border-blue-500/20 rounded-lg text-xs">
+																			<div className="flex items-center gap-2 mb-2 text-blue-600">
+																				<Brain className="h-3 w-3" />
+																				<span className="font-medium">Thinking Process</span>
+																			</div>
+																			<div className="space-y-1.5">
+																				{message.thinking.map((thought, index) => (
+																					<div key={index} className="flex items-start gap-2">
+																						<ArrowRight className="h-3 w-3 text-blue-500 mt-0.5 flex-shrink-0" />
+																						<span className="text-blue-700 dark:text-blue-300">{thought}</span>
 																					</div>
 																				))}
 																			</div>
 																		</div>
 																	)}
-																</div>
-															)}
 
-															<div className={`flex items-center gap-2 mt-2 text-xs text-muted-foreground ${!isAI ? "justify-end" : ""}`}>
-																<span>{message.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+																	<Tooltip>
+																		<TooltipTrigger asChild>
+																			<div className={`p-4 rounded-xl shadow-sm cursor-pointer hover:shadow-md transition-all duration-200 ${isAI ? "bg-card border border-border/50 hover:border-border/70" : message.senderType === "viewer" ? "bg-zinc-900 dark:bg-zinc-800 text-zinc-100 border border-zinc-700 ml-auto" : "bg-zinc-900 dark:bg-zinc-800 text-zinc-100 border border-zinc-700 ml-auto"}`}>
+																				<div className="text-sm leading-relaxed whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: processContent(message.content) }} />
+																			</div>
+																		</TooltipTrigger>
+																		{isAI && (
+																			<TooltipContent side="right" className="max-w-sm bg-card/95 backdrop-blur-sm border border-border/50 shadow-2xl rounded-xl overflow-hidden" sideOffset={15} alignOffset={-50}>
+																				<div className="space-y-3 p-3">
+																					<div className="border-b border-border/30 pb-2">
+																						<div className="font-medium text-sm text-foreground">{message.senderName}</div>
+																						<div className="text-xs text-muted-foreground">{message.timestamp.toLocaleString()}</div>
+																					</div>
+																					<div className="grid grid-cols-2 gap-2 text-xs">
+																						<div className="p-2 bg-muted/20 rounded-lg">
+																							<div className="text-muted-foreground mb-1">Confidence</div>
+																							<div className="flex items-center gap-1">
+																								<div className="flex-1 bg-muted/50 rounded-full h-1.5">
+																									<div className="bg-green-500 h-1.5 rounded-full transition-all" style={{ width: `${(message.confidence || 0) * 100}%` }}></div>
+																								</div>
+																								<span className="font-mono text-foreground text-xs">{Math.round((message.confidence || 0) * 100)}%</span>
+																							</div>
+																						</div>
+																						<div className="p-2 bg-muted/20 rounded-lg">
+																							<div className="text-muted-foreground mb-1">Tokens</div>
+																							<div className="font-mono text-foreground font-medium">{Math.floor(message.content.length / 4) + Math.floor(message.content.length / 3)}</div>
+																						</div>
+																					</div>
+																				</div>
+																			</TooltipContent>
+																		)}
+																	</Tooltip>
+																</div>
 															</div>
-														</div>
-													</div>
-												);
-											})}
+														);
+													});
+												} else {
+													// Threaded mode - Facebook-style with replies
+													return organized.rootMessages.map((rootMessage) => {
+														const threadId = rootMessage.threadId || rootMessage.id;
+														const replies = organized.threadGroups[threadId] || [];
+														const isCollapsed = collapsedThreads.has(threadId);
+														const isAI = rootMessage.senderType === "ai";
+
+														return (
+															<div key={rootMessage.id} className="space-y-2">
+																{/* Root Message with full functionality */}
+																<div className={`flex gap-4 ${isAI ? "" : "justify-end"}`}>
+																	{isAI && (
+																		<Avatar className="h-10 w-10 ring-2 ring-background shadow-sm">
+																			<AvatarImage src={rootMessage.senderAvatar} alt={rootMessage.senderName} />
+																			<AvatarFallback className="bg-primary/10 text-primary font-medium">{rootMessage.senderName.charAt(0)}</AvatarFallback>
+																		</Avatar>
+																	)}
+																	{!isAI && (
+																		<Avatar className="h-10 w-10 ring-2 ring-background shadow-sm order-last">
+																			<AvatarImage src={rootMessage.senderAvatar} alt={rootMessage.senderName} />
+																			<AvatarFallback className="bg-blue-500/10 text-blue-600 font-medium">{rootMessage.senderName.charAt(0)}</AvatarFallback>
+																		</Avatar>
+																	)}
+
+																	<div className={`flex-1 max-w-2xl ${!isAI ? "order-first" : ""}`}>
+																		{isAI && (
+																			<div className="flex items-center gap-2 mb-2">
+																				<span className="font-medium text-sm text-foreground">{rootMessage.senderName}</span>
+																				<span className="text-xs text-muted-foreground">{rootMessage.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+																				{rootMessage.confidence && (
+																					<Badge variant="outline" className="text-xs px-2 py-0.5 bg-primary/5 border-primary/20 text-primary">
+																						{Math.round(rootMessage.confidence * 100)}%
+																					</Badge>
+																				)}
+																				{rootMessage.emotion && (
+																					<Badge variant="secondary" className="text-xs px-2 py-0.5 bg-muted/50">
+																						{rootMessage.emotion}
+																					</Badge>
+																				)}
+																			</div>
+																		)}
+																		{!isAI && (
+																			<div className="flex items-center gap-2 mb-2 justify-end">
+																				<span className="text-xs text-muted-foreground">{rootMessage.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+																				<span className="font-medium text-sm text-foreground">{rootMessage.senderName}</span>
+																			</div>
+																		)}
+
+																		{isAI && showThinking && rootMessage.thinking && (
+																			<div className="mb-3 p-3 bg-blue-500/5 border border-blue-500/20 rounded-lg text-xs">
+																				<div className="flex items-center gap-2 mb-2 text-blue-600">
+																					<Brain className="h-3 w-3" />
+																					<span className="font-medium">Thinking Process</span>
+																				</div>
+																				<div className="space-y-1.5">
+																					{rootMessage.thinking.map((thought, index) => (
+																						<div key={index} className="flex items-start gap-2">
+																							<ArrowRight className="h-3 w-3 text-blue-500 mt-0.5 flex-shrink-0" />
+																							<span className="text-blue-700 dark:text-blue-300">{thought}</span>
+																						</div>
+																					))}
+																				</div>
+																			</div>
+																		)}
+
+																		<Tooltip>
+																			<TooltipTrigger asChild>
+																				<div className={`p-4 rounded-xl shadow-sm cursor-pointer hover:shadow-md transition-all duration-200 ${isAI ? "bg-card border border-border/50 hover:border-border/70" : rootMessage.senderType === "viewer" ? "bg-zinc-900 dark:bg-zinc-800 text-zinc-100 border border-zinc-700 ml-auto" : "bg-zinc-900 dark:bg-zinc-800 text-zinc-100 border border-zinc-700 ml-auto"}`}>
+																					<div className="text-sm leading-relaxed whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: processContent(rootMessage.content) }} />
+																				</div>
+																			</TooltipTrigger>
+																			{isAI && (
+																				<TooltipContent side="right" className="max-w-sm bg-card/95 backdrop-blur-sm border border-border/50 shadow-2xl rounded-xl overflow-hidden" sideOffset={15} alignOffset={-50}>
+																					<div className="space-y-3 p-3">
+																						<div className="border-b border-border/30 pb-2">
+																							<div className="font-medium text-sm text-foreground">{rootMessage.senderName}</div>
+																							<div className="text-xs text-muted-foreground">{rootMessage.timestamp.toLocaleString()}</div>
+																						</div>
+																						<div className="grid grid-cols-2 gap-2 text-xs">
+																							<div className="p-2 bg-muted/20 rounded-lg">
+																								<div className="text-muted-foreground mb-1">Confidence</div>
+																								<div className="flex items-center gap-1">
+																									<div className="flex-1 bg-muted/50 rounded-full h-1.5">
+																										<div className="bg-green-500 h-1.5 rounded-full transition-all" style={{ width: `${(rootMessage.confidence || 0) * 100}%` }}></div>
+																									</div>
+																									<span className="font-mono text-foreground text-xs">{Math.round((rootMessage.confidence || 0) * 100)}%</span>
+																								</div>
+																							</div>
+																							<div className="p-2 bg-muted/20 rounded-lg">
+																								<div className="text-muted-foreground mb-1">Tokens</div>
+																								<div className="font-mono text-foreground font-medium">{Math.floor(rootMessage.content.length / 4) + Math.floor(rootMessage.content.length / 3)}</div>
+																							</div>
+																						</div>
+																					</div>
+																				</TooltipContent>
+																			)}
+																		</Tooltip>
+
+																		{/* Facebook-style Thread Collapse/Expand Button */}
+																		{replies.length > 0 && (
+																			<div className="mt-2">
+																				<Button variant="ghost" size="sm" className="h-8 px-3 text-xs text-muted-foreground hover:text-foreground border border-border/30 hover:border-border/60 bg-muted/20 hover:bg-muted/40" onClick={() => toggleThreadCollapse(threadId)}>
+																					{isCollapsed ? (
+																						<>
+																							<ChevronRight className="h-3 w-3 mr-1" />
+																							{replies.length} {replies.length === 1 ? "reply" : "replies"}
+																						</>
+																					) : (
+																						<>
+																							<ChevronDown className="h-3 w-3 mr-1" />
+																							Hide {replies.length} {replies.length === 1 ? "reply" : "replies"}
+																						</>
+																					)}
+																				</Button>
+																			</div>
+																		)}
+
+																		{/* Replies - Show when not collapsed */}
+																		{replies.length > 0 && !isCollapsed && (
+																			<div className="mt-4 ml-6 space-y-3 border-l-2 border-border/30 pl-4">
+																				{replies.map((reply) => {
+																					const replyIsAI = reply.senderType === "ai";
+
+																					return (
+																						<div key={reply.id} className={`flex gap-3 ${replyIsAI ? "" : "justify-end"}`}>
+																							{replyIsAI && (
+																								<Avatar className="h-8 w-8 ring-2 ring-background shadow-sm">
+																									<AvatarImage src={reply.senderAvatar} alt={reply.senderName} />
+																									<AvatarFallback className="bg-primary/10 text-primary font-medium text-xs">{reply.senderName.charAt(0)}</AvatarFallback>
+																								</Avatar>
+																							)}
+																							{!replyIsAI && (
+																								<Avatar className="h-8 w-8 ring-2 ring-background shadow-sm order-last">
+																									<AvatarImage src={reply.senderAvatar} alt={reply.senderName} />
+																									<AvatarFallback className="bg-blue-500/10 text-blue-600 font-medium text-xs">{reply.senderName.charAt(0)}</AvatarFallback>
+																								</Avatar>
+																							)}
+
+																							<div className={`flex-1 max-w-xl ${!replyIsAI ? "order-first" : ""}`}>
+																								<div className="flex items-center gap-2 mb-1">
+																									<span className="font-medium text-xs text-foreground">{reply.senderName}</span>
+																									<span className="text-xs text-muted-foreground">{reply.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+																									{reply.confidence && (
+																										<Badge variant="outline" className="text-xs px-1.5 py-0.5 bg-primary/5 border-primary/20 text-primary">
+																											{Math.round(reply.confidence * 100)}%
+																										</Badge>
+																									)}
+																								</div>
+
+																								<div className={`p-3 rounded-lg shadow-sm transition-all duration-200 ${replyIsAI ? "bg-card border border-border/40" : "bg-zinc-900 dark:bg-zinc-800 text-zinc-100 border border-zinc-700"}`}>
+																									<div className="text-xs leading-relaxed whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: processContent(reply.content) }} />
+																								</div>
+																							</div>
+																						</div>
+																					);
+																				})}
+																			</div>
+																		)}
+																	</div>
+																</div>
+															</div>
+														);
+													});
+												}
+											})()}
 											<div ref={messagesEndRef} />
 										</div>
 									</div>
